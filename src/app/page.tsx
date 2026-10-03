@@ -12,11 +12,30 @@ import { User } from "@supabase/supabase-js";
 const HlsPlayer = ({ src }: { src: string }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
-  const [levels, setLevels] = useState<{ height: number }[]>([]);
+  const [levels, setLevels] = useState<{ height: number, width?: number }[]>([]);
   const [currentLevel, setCurrentLevel] = useState<number>(-1);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [showSettings, setShowSettings] = useState(false);
+  const [isUIActive, setIsUIActive] = useState(true);
+  const uiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastToggleTime = useRef(0);
+
+  useEffect(() => {
+    const handleActivity = () => {
+      setIsUIActive(true);
+      if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current);
+      if (!showSettings) {
+        uiTimeoutRef.current = setTimeout(() => setIsUIActive(false), 3000);
+      }
+    };
+
+    handleActivity(); // Init
+    
+    // Cleanup
+    return () => {
+      if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current);
+    };
+  }, [showSettings]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -79,10 +98,15 @@ const HlsPlayer = ({ src }: { src: string }) => {
   };
 
   return (
-    <div className="relative w-full h-full group bg-black">
+    <div 
+      className="relative w-full h-full group bg-black rounded-2xl"
+      onMouseMove={() => { setIsUIActive(true); if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current); if (!showSettings) uiTimeoutRef.current = setTimeout(() => setIsUIActive(false), 3000); }}
+      onTouchStart={() => { setIsUIActive(true); if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current); if (!showSettings) uiTimeoutRef.current = setTimeout(() => setIsUIActive(false), 3000); }}
+      onClick={() => { setIsUIActive(true); if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current); if (!showSettings) uiTimeoutRef.current = setTimeout(() => setIsUIActive(false), 3000); }}
+    >
       <video
         ref={videoRef}
-        className="cursor-pointer w-full h-full object-contain"
+        className="cursor-pointer w-full h-full object-contain rounded-2xl"
         controls
         playsInline
         autoPlay
@@ -101,53 +125,81 @@ const HlsPlayer = ({ src }: { src: string }) => {
             }
           }, 50);
         }}
+        onTouchEnd={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const touch = e.changedTouches[0];
+          if (rect.height - (touch.clientY - rect.top) < 70) return;
+
+          setTimeout(() => {
+            if (Date.now() - lastToggleTime.current < 150) return;
+            
+            if (videoRef.current) {
+              if (videoRef.current.paused) videoRef.current.play();
+              else videoRef.current.pause();
+            }
+          }, 50);
+        }}
       />
       
-      {levels.length > 0 && (
-        <div className="absolute top-4 right-4 z-50">
-          <button 
-            onClick={() => setShowSettings(!showSettings)}
-            className="cursor-pointer w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur text-white flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-          </button>
-          
-          {showSettings && (
-            <div className="absolute top-12 right-0 bg-black/90 backdrop-blur-md rounded-lg p-2 border border-white/10 w-32 animate-in fade-in zoom-in-95 max-h-[300px] overflow-y-auto custom-scrollbar">
-              <div className="text-[10px] font-bold text-zinc-400 mb-1 px-3 uppercase tracking-wider">Quality</div>
-              <button 
-                onClick={() => handleQualityChange(-1)}
-                className={`cursor-pointer w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-between ${currentLevel === -1 ? 'bg-white/10 text-orange-500' : 'text-white hover:bg-white/5'}`}
-              >
-                Auto {currentLevel === -1 && '✓'}
-              </button>
-              {levels.slice().reverse().map((level, idx) => {
-                const originalIndex = levels.length - 1 - idx;
-                return (
+      <div className="absolute top-4 right-4 z-50">
+        <button 
+          onClick={() => setShowSettings(!showSettings)}
+          className={`cursor-pointer w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur text-white flex items-center justify-center transition-all md:opacity-0 md:group-hover:opacity-100 ${isUIActive || showSettings ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+        </button>
+        
+        {showSettings && (
+          <div className="absolute top-12 right-0 bg-black/90 backdrop-blur-md rounded-xl p-3 border border-white/10 w-56 animate-in fade-in zoom-in-95 shadow-2xl">
+            {levels.length > 0 && (
+              <div className="mb-3">
+                <div className="text-[10px] font-bold text-zinc-400 mb-2 uppercase tracking-wider">Chất lượng</div>
+                <div className="grid grid-cols-3 gap-1.5">
                   <button 
-                    key={originalIndex}
-                    onClick={() => handleQualityChange(originalIndex, level.height)}
-                    className={`cursor-pointer w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-between ${currentLevel === originalIndex ? 'bg-white/10 text-orange-500' : 'text-white hover:bg-white/5'}`}
+                    onClick={() => handleQualityChange(-1)}
+                    className={`cursor-pointer px-2 py-1.5 rounded-lg text-xs font-bold transition-colors ${currentLevel === -1 ? 'bg-orange-500 text-white' : 'bg-white/5 text-zinc-300 hover:bg-white/10'}`}
                   >
-                    {level.height}p {currentLevel === originalIndex && '✓'}
+                    Auto
                   </button>
-                )
-              })}
-              <div className="h-px bg-white/10 my-2 mx-2"></div>
-              <div className="text-[10px] font-bold text-zinc-400 mb-1 px-3 uppercase tracking-wider">Speed</div>
-              {[0.5, 1, 1.25, 1.5, 2].map(rate => (
-                <button
-                  key={`speed-${rate}`}
-                  onClick={() => handleSpeedChange(rate)}
-                  className={`cursor-pointer w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-between ${playbackRate === rate ? 'bg-white/10 text-orange-500' : 'text-white hover:bg-white/5'}`}
-                >
-                  {rate}x {playbackRate === rate && '✓'}
-                </button>
-              ))}
+                  {levels.slice().reverse().map((level, idx) => {
+                    const originalIndex = levels.length - 1 - idx;
+                    const getQualityLabel = (l: { height: number, width?: number }) => {
+                      if ((l.width && l.width >= 1900) || l.height >= 1000 || l.height === 804) return '1080p';
+                      if ((l.width && l.width >= 1200) || l.height >= 700 || l.height === 536) return '720p';
+                      if ((l.width && l.width >= 800) || l.height >= 480 || l.height === 358) return '480p';
+                      return `${l.height}p`;
+                    };
+                    return (
+                      <button 
+                        key={originalIndex}
+                        onClick={() => handleQualityChange(originalIndex, level.height)}
+                        className={`cursor-pointer px-2 py-1.5 rounded-lg text-xs font-bold transition-colors ${currentLevel === originalIndex ? 'bg-orange-500 text-white' : 'bg-white/5 text-zinc-300 hover:bg-white/10'}`}
+                      >
+                        {getQualityLabel(level)}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            
+            <div>
+              <div className="text-[10px] font-bold text-zinc-400 mb-2 uppercase tracking-wider">Tốc độ</div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[0.5, 1, 1.25, 1.5, 2].map(rate => (
+                  <button
+                    key={`speed-${rate}`}
+                    onClick={() => handleSpeedChange(rate)}
+                    className={`cursor-pointer px-2 py-1.5 rounded-lg text-xs font-bold transition-colors ${playbackRate === rate ? 'bg-orange-500 text-white' : 'bg-white/5 text-zinc-300 hover:bg-white/10'}`}
+                  >
+                    {rate}x
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -709,7 +761,13 @@ export default function Home() {
 
                 <button onClick={() => { setCurrentGenre({ name: "Phim Bộ", slug: "phim-bo", type: "danh-sach" }); handleCloseMovie(); setIsMobileMenuOpen(false); }} className="text-left hover:text-orange-400 cursor-pointer transition-colors">Phim Bộ</button>
 
-                <button className="text-left hover:text-orange-400 cursor-pointer transition-colors flex items-center gap-2">
+                <button 
+                  onClick={() => {
+                    setIsJoinRoomOpen(true);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="text-left hover:text-orange-400 cursor-pointer transition-colors flex items-center gap-2"
+                >
                   <span className="bg-yellow-500 text-black text-[9px] px-1.5 py-0.5 rounded font-black">NEW</span>
                   Xem Chung
                 </button>
@@ -756,9 +814,9 @@ export default function Home() {
           </button>
 
           {/* Custom Video Player Area */}
-          <div className="w-full aspect-video bg-zinc-950 rounded-2xl overflow-hidden relative mb-12 shadow-2xl border border-white/5 group flex items-center justify-center">
+          <div className="w-full aspect-video bg-zinc-950 rounded-2xl relative mb-12 shadow-2xl border border-white/5 group flex items-center justify-center">
             {playing && currentEpisode ? (
-              <div className="w-full h-full bg-black">
+              <div className="w-full h-full bg-black rounded-2xl">
                 {currentEpisode.link_m3u8 ? (
                   <HlsPlayer src={currentEpisode.link_m3u8} />
                 ) : (
