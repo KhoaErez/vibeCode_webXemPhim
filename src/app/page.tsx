@@ -296,9 +296,6 @@ const MovieCard = ({ movie, onSelectMovie, className = "" }: { movie: KKPhimList
     <h3 className="font-semibold text-sm leading-tight mb-1 line-clamp-1 group-hover:text-orange-500 transition-colors text-white mt-2">
       {movie.name}
     </h3>
-    <p className="text-xs text-zinc-500 font-medium flex items-center justify-between">
-      <span className="truncate">{movie.origin_name || `Năm ${movie.year}`}</span>
-    </p>
   </button>
 );
 
@@ -340,6 +337,7 @@ export default function Home() {
   const [currentRoom, setCurrentRoom] = useState<any>(null);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [showRoomWarningModal, setShowRoomWarningModal] = useState(false);
+  const [showAuthWarningModal, setShowAuthWarningModal] = useState(false);
   const supabase = createClient();
 
   const handleNavigationAttempt = (e?: any) => {
@@ -624,8 +622,7 @@ export default function Home() {
                         <img src={getImage(movie.thumb_url)} alt={movie.name} className="w-12 h-16 object-cover rounded-lg shadow-sm" />
                         <div className="flex-1 overflow-hidden">
                           <h4 className="text-white font-bold text-sm truncate">{movie.name}</h4>
-                          <p className="text-zinc-500 text-xs truncate mb-1">{movie.origin_name}</p>
-                          <p className="text-orange-500 text-xs font-semibold">{movie.year}</p>
+                          <p className="text-orange-500 text-xs font-semibold mt-1">{movie.year}</p>
                         </div>
                       </div>
                     ))
@@ -665,17 +662,24 @@ export default function Home() {
           
           {/* User Auth Section (Desktop) */}
           <div className="hidden lg:flex items-center gap-2 xl:gap-4 shrink-0">
+            <button
+              onClick={(e) => { 
+                if (!handleNavigationAttempt(e)) return; 
+                if (!user) {
+                  setShowAuthWarningModal(true);
+                } else {
+                  setIsJoinRoomOpen(true); 
+                }
+              }}
+              className="cursor-pointer flex items-center gap-1.5 lg:gap-2 px-3 xl:px-4 py-1.5 xl:py-2 rounded-full hover:bg-white/10 text-white font-bold text-xs xl:text-sm transition-colors whitespace-nowrap bg-zinc-900/60 backdrop-blur-xl border border-white/10 shadow-xl"
+              title="Tham gia phòng xem chung"
+            >
+              <svg className="w-4 h-4 text-orange-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
+              Vào phòng
+            </button>
+
             {user ? (
               <>
-                <button
-                  onClick={(e) => { if (!handleNavigationAttempt(e)) return; setIsJoinRoomOpen(true); }}
-                  className="cursor-pointer flex items-center gap-1.5 lg:gap-2 px-3 xl:px-4 py-1.5 xl:py-2 rounded-full hover:bg-white/10 text-white font-bold text-xs xl:text-sm transition-colors whitespace-nowrap bg-zinc-900/60 backdrop-blur-xl border border-white/10 shadow-xl"
-                  title="Tham gia phòng xem chung"
-                >
-                  <svg className="w-4 h-4 text-orange-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
-                  Vào phòng
-                </button>
-                
                 <div className="flex items-center bg-zinc-200 rounded-full py-1.5 pl-3 pr-2 xl:pr-3 shadow-lg shrink-0 gap-2">
                   <div className="flex items-center gap-2 cursor-pointer group" title="Trang cá nhân (Đang phát triển)">
                     <svg className="w-4 h-4 xl:w-5 xl:h-5 text-zinc-900" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>
@@ -701,7 +705,7 @@ export default function Home() {
                 className="cursor-pointer px-4 xl:px-5 py-2 bg-zinc-200 hover:bg-white text-zinc-900 font-bold text-xs xl:text-sm rounded-full transition-all flex items-center gap-2 shadow-lg hover:scale-105 whitespace-nowrap shrink-0"
               >
                 <svg className="w-4 h-4 xl:w-5 xl:h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>
-                Thành viên
+                Đăng nhập
               </button>
             )}
           </div>
@@ -730,7 +734,7 @@ export default function Home() {
               ) : (
                 <button onClick={() => { setIsAuthModalOpen(true); setIsMobileMenuOpen(false); }} className="w-full bg-zinc-200 text-zinc-900 font-bold py-3 rounded-full flex items-center justify-center gap-2 mb-8 cursor-pointer shadow-lg hover:bg-white transition-colors">
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>
-                  Thành viên
+                  Đăng nhập
                 </button>
               )}
 
@@ -763,8 +767,13 @@ export default function Home() {
 
                 <button 
                   onClick={() => {
-                    setIsJoinRoomOpen(true);
-                    setIsMobileMenuOpen(false);
+                    if (!user) {
+                      setShowAuthWarningModal(true);
+                      setIsMobileMenuOpen(false);
+                    } else {
+                      setIsJoinRoomOpen(true);
+                      setIsMobileMenuOpen(false);
+                    }
                   }}
                   className="text-left hover:text-orange-400 cursor-pointer transition-colors flex items-center gap-2"
                 >
@@ -849,8 +858,7 @@ export default function Home() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
             {/* Left Column (2/3) */}
             <div className="lg:col-span-2">
-              <h1 className="text-4xl md:text-5xl font-black text-white mb-2 leading-tight">{selectedMovie.name}</h1>
-              <p className="text-lg text-zinc-400 mb-6 font-medium">{selectedMovie.origin_name}</p>
+              <h1 className="text-4xl md:text-5xl font-black text-white mb-6 leading-tight">{selectedMovie.name}</h1>
 
               {detailLoading ? (
                 <div className="py-12 animate-pulse space-y-6">
@@ -1079,12 +1087,9 @@ export default function Home() {
 
                   {/* Content Container */}
                   <div className="absolute inset-0 flex flex-col justify-end md:justify-center px-6 md:px-16 w-full md:w-3/4 lg:w-1/2 z-10 pt-[140px] md:pt-20 pb-[120px] md:pb-0">
-                    <h1 className="text-4xl md:text-5xl lg:text-7xl font-extrabold tracking-tight mb-3 text-white drop-shadow-2xl leading-tight max-w-4xl">
+                    <h1 className="text-4xl md:text-5xl lg:text-7xl font-extrabold tracking-tight mb-8 text-white drop-shadow-2xl leading-tight max-w-4xl">
                       {featuredMovie.name}
                     </h1>
-                    <p className="text-lg md:text-xl text-zinc-300 font-semibold mb-8 drop-shadow-lg tracking-wide max-w-2xl line-clamp-2 md:line-clamp-none">
-                      {featuredMovie.origin_name}
-                    </p>
 
                     {/* Tags row */}
                     <div className="flex flex-wrap items-center gap-2.5 mb-10 text-xs md:text-sm font-bold uppercase tracking-wider">
@@ -1250,6 +1255,35 @@ export default function Home() {
             >
               Đã Hiểu
             </button>
+          </div>
+        </div>
+      )}
+
+      {showAuthWarningModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-200 px-4">
+          <div className="bg-zinc-900 border border-white/10 rounded-2xl p-8 max-w-sm w-full shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 bg-blue-500/20 text-blue-500 rounded-full flex items-center justify-center mb-6">
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8V7z" /></svg>
+            </div>
+            <h3 className="text-xl font-bold text-white mb-2">Yêu Cầu Đăng Nhập</h3>
+            <p className="text-zinc-400 text-sm mb-8">Vui lòng đăng nhập để sử dụng tính năng Xem Chung.</p>
+            <div className="flex w-full gap-3">
+              <button
+                onClick={() => setShowAuthWarningModal(false)}
+                className="cursor-pointer flex-1 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-3 rounded-xl transition-all border border-white/5"
+              >
+                Đóng
+              </button>
+              <button
+                onClick={() => {
+                  setShowAuthWarningModal(false);
+                  setIsAuthModalOpen(true);
+                }}
+                className="cursor-pointer flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition-all"
+              >
+                Đăng Nhập
+              </button>
+            </div>
           </div>
         </div>
       )}
