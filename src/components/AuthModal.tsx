@@ -8,6 +8,20 @@ type AuthModalProps = {
 };
 
 export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
+  const translateAuthError = (message: string) => {
+    if (message.includes('security purposes, you can only request this after')) {
+      const seconds = message.match(/\d+/)?.[0] || '60';
+      return `Hệ thống chống spam: Vui lòng đợi ${seconds} giây nữa rồi bấm Đăng Ký lại.`;
+    }
+    if (message.includes('User already registered')) return 'Tài khoản (Email) này đã tồn tại!';
+    if (message.includes('Invalid login credentials')) return 'Email hoặc mật khẩu không chính xác!';
+    if (message.includes('Password should be at least')) return 'Mật khẩu quá ngắn, vui lòng đặt ít nhất 6 ký tự!';
+    if (message.includes('Email not confirmed')) return 'Tài khoản chưa được kích hoạt. Vui lòng kiểm tra hòm thư Email (hoặc mục Thư Rác/Spam) để xác thực!';
+    if (message.includes('Rate limit exceeded')) return 'Bạn thao tác quá nhanh, vui lòng chờ một lát rồi thử lại!';
+    if (message.includes('Unable to validate email address')) return 'Địa chỉ email không hợp lệ!';
+    return message; // fallback
+  };
+
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -54,7 +68,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
         onClose();
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Đã có lỗi xảy ra');
+      const rawMessage = err instanceof Error ? err.message : 'Đã có lỗi xảy ra';
+      setError(translateAuthError(rawMessage));
     } finally {
       setLoading(false);
     }
