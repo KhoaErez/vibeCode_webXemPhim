@@ -112,6 +112,10 @@ const HlsPlayer = ({ src }: { src: string }) => {
         autoPlay
         onPlay={() => { lastToggleTime.current = Date.now(); }}
         onPause={() => { lastToggleTime.current = Date.now(); }}
+        onSeeking={() => { lastToggleTime.current = Date.now(); }}
+        onSeeked={() => { lastToggleTime.current = Date.now(); }}
+        onVolumeChange={() => { lastToggleTime.current = Date.now(); }}
+        onRateChange={() => { lastToggleTime.current = Date.now(); }}
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           if (rect.height - (e.clientY - rect.top) < 70) return; // Clicked on controls
