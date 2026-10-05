@@ -331,6 +331,8 @@ export default function Home() {
   const [movies, setMovies] = useState<KKPhimListMovie[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentGenre, setCurrentGenre] = useState(genresMap[0]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [currentSort, setCurrentSort] = useState("rating");
 
   // Auth states
@@ -444,19 +446,22 @@ export default function Home() {
     const fetchMovies = async () => {
       setLoading(true);
       try {
-        let url = "https://phimapi.com/danh-sach/phim-moi-cap-nhat?page=1";
+        let url = `https://phimapi.com/danh-sach/phim-moi-cap-nhat?page=${currentPage}`;
         if (currentGenre.type === "the-loai") {
-          url = `https://phimapi.com/v1/api/the-loai/${currentGenre.slug}?page=1`;
+          url = `https://phimapi.com/v1/api/the-loai/${currentGenre.slug}?page=${currentPage}`;
         } else if (currentGenre.type === "quoc-gia") {
-          url = `https://phimapi.com/v1/api/quoc-gia/${currentGenre.slug}?page=1`;
+          url = `https://phimapi.com/v1/api/quoc-gia/${currentGenre.slug}?page=${currentPage}`;
         } else if (currentGenre.type === "danh-sach") {
-          url = `https://phimapi.com/v1/api/danh-sach/${currentGenre.slug}?page=1`;
+          url = `https://phimapi.com/v1/api/danh-sach/${currentGenre.slug}?page=${currentPage}`;
         }
         const res = await fetch(url);
         const data = await res.json();
 
         const items = data?.data?.items || data?.items || [];
         setMovies(items);
+        
+        const total = data?.data?.params?.pagination?.totalPages || data?.pagination?.totalPages || 1;
+        setTotalPages(total);
 
         if (items.length > 0) {
           // Sort items by rating to feature the best one
@@ -472,7 +477,7 @@ export default function Home() {
       }
     };
     fetchMovies();
-  }, [currentGenre]);
+  }, [currentGenre, currentPage]);
 
   // Update featured movie when sorting changes (if not in detail view)
   const sortedMovies = [...movies].sort((a, b) => {
@@ -558,6 +563,12 @@ export default function Home() {
     setEpisodeChunk(0);
   };
 
+  const handleGenreChange = (genre: any) => {
+    setCurrentGenre(genre);
+    setCurrentPage(1);
+    handleCloseMovie();
+  };
+
   const playEpisode = (episode: { name: string, link_embed: string, link_m3u8: string }) => {
     setCurrentEpisode(episode);
     setPlaying(true);
@@ -585,7 +596,7 @@ export default function Home() {
                 >
                   <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
                 </button>
-                <a href="#" onClick={(e) => { e.preventDefault(); if (!handleNavigationAttempt(e)) return; setCurrentGenre(genresMap[0]); handleCloseMovie(); }} className="cursor-pointer text-3xl font-extrabold tracking-wide text-white shrink-0 hover:opacity-80 transition-opacity">
+                <a href="#" onClick={(e) => { e.preventDefault(); if (!handleNavigationAttempt(e)) return; handleGenreChange(genresMap[0]); }} className="cursor-pointer text-3xl font-extrabold tracking-wide text-white shrink-0 hover:opacity-80 transition-opacity">
                   Rạp<span className="text-orange-500">Nhà</span>
                 </a>
               </div>
@@ -642,9 +653,9 @@ export default function Home() {
 
           {/* Navigation Links (Desktop) */}
           <nav className="hidden lg:flex items-center gap-3 xl:gap-6 text-[13px] xl:text-sm font-semibold text-zinc-300 whitespace-nowrap">
-            <button onClick={(e) => { if (!handleNavigationAttempt(e)) return; setCurrentGenre(genresMap[0]); handleCloseMovie(); }} className={`cursor-pointer hover:text-white transition-colors ${currentGenre.slug === genresMap[0].slug ? 'text-white' : ''}`}>Trang Chủ</button>
+            <button onClick={(e) => { if (!handleNavigationAttempt(e)) return; handleGenreChange(genresMap[0]); }} className={`cursor-pointer hover:text-white transition-colors ${currentGenre.slug === genresMap[0].slug ? 'text-white' : ''}`}>Trang Chủ</button>
             {genresMap.slice(1, 6).map(g => (
-              <button key={g.slug} onClick={(e) => { if (!handleNavigationAttempt(e)) return; setCurrentGenre(g); handleCloseMovie(); }} className={`cursor-pointer hover:text-white transition-colors ${currentGenre.slug === g.slug ? 'text-orange-500' : ''}`}>{g.name}</button>
+              <button key={g.slug} onClick={(e) => { if (!handleNavigationAttempt(e)) return; handleGenreChange(g); }} className={`cursor-pointer hover:text-white transition-colors ${currentGenre.slug === g.slug ? 'text-orange-500' : ''}`}>{g.name}</button>
             ))}
             <div className="relative group py-2">
               <button className={`cursor-pointer transition-colors flex items-center gap-1 ${currentGenre.type === 'quoc-gia' ? 'text-orange-500' : 'hover:text-white'}`}>
@@ -654,7 +665,7 @@ export default function Home() {
                 {countries.map(c => (
                   <button
                     key={c.slug}
-                    onClick={(e) => { if (!handleNavigationAttempt(e)) return; setCurrentGenre({ name: c.name, slug: c.slug, type: "quoc-gia" }); handleCloseMovie(); }}
+                    onClick={(e) => { if (!handleNavigationAttempt(e)) return; handleGenreChange({ name: c.name, slug: c.slug, type: "quoc-gia" }); }}
                     className={`cursor-pointer text-left px-3 py-2 rounded-lg text-xs font-semibold hover:bg-zinc-800 transition-colors ${currentGenre.slug === c.slug ? 'text-orange-500' : 'text-zinc-300 hover:text-white'}`}
                   >
                     {c.name}
@@ -743,7 +754,7 @@ export default function Home() {
               )}
 
               <div className="grid grid-cols-2 gap-y-6 gap-x-4 text-sm font-bold text-white">
-                <button onClick={() => { setCurrentGenre(genresMap[0]); handleCloseMovie(); setIsMobileMenuOpen(false); }} className="text-left hover:text-orange-400 cursor-pointer transition-colors">Chủ Đề</button>
+                <button onClick={() => { handleGenreChange(genresMap[0]); setIsMobileMenuOpen(false); }} className="text-left hover:text-orange-400 cursor-pointer transition-colors">Chủ Đề</button>
 
                 {/* Thể loại */}
                 <div className="flex flex-col col-span-1">
@@ -757,7 +768,7 @@ export default function Home() {
                   {mobileExpandedSection === 'the-loai' && (
                     <div className="mt-4 flex flex-col gap-4 pl-2 border-l border-white/10 max-h-48 overflow-y-auto custom-scrollbar">
                       {genresMap.slice(1).map(g => (
-                        <button key={g.slug} onClick={() => { setCurrentGenre(g); handleCloseMovie(); setIsMobileMenuOpen(false); }} className={`cursor-pointer text-left text-xs font-semibold hover:text-white ${currentGenre.slug === g.slug ? 'text-orange-400' : 'text-zinc-300'}`}>
+                        <button key={g.slug} onClick={() => { handleGenreChange(g); setIsMobileMenuOpen(false); }} className={`cursor-pointer text-left text-xs font-semibold hover:text-white ${currentGenre.slug === g.slug ? 'text-orange-400' : 'text-zinc-300'}`}>
                           {g.name}
                         </button>
                       ))}
@@ -765,9 +776,9 @@ export default function Home() {
                   )}
                 </div>
 
-                <button onClick={() => { setCurrentGenre({ name: "Phim Lẻ", slug: "phim-le", type: "danh-sach" }); handleCloseMovie(); setIsMobileMenuOpen(false); }} className="text-left hover:text-orange-400 cursor-pointer transition-colors">Phim Lẻ</button>
+                <button onClick={() => { handleGenreChange({ name: "Phim Lẻ", slug: "phim-le", type: "danh-sach" }); setIsMobileMenuOpen(false); }} className="text-left hover:text-orange-400 cursor-pointer transition-colors">Phim Lẻ</button>
 
-                <button onClick={() => { setCurrentGenre({ name: "Phim Bộ", slug: "phim-bo", type: "danh-sach" }); handleCloseMovie(); setIsMobileMenuOpen(false); }} className="text-left hover:text-orange-400 cursor-pointer transition-colors">Phim Bộ</button>
+                <button onClick={() => { handleGenreChange({ name: "Phim Bộ", slug: "phim-bo", type: "danh-sach" }); setIsMobileMenuOpen(false); }} className="text-left hover:text-orange-400 cursor-pointer transition-colors">Phim Bộ</button>
 
                 <button 
                   onClick={() => {
@@ -797,7 +808,7 @@ export default function Home() {
                   {mobileExpandedSection === 'quoc-gia' && (
                     <div className="mt-4 flex flex-col gap-4 pl-2 border-l border-white/10 max-h-48 overflow-y-auto custom-scrollbar">
                       {countries.map(c => (
-                        <button key={c.slug} onClick={() => { setCurrentGenre({ name: c.name, slug: c.slug, type: "quoc-gia" }); handleCloseMovie(); setIsMobileMenuOpen(false); }} className={`cursor-pointer text-left text-xs font-semibold hover:text-white ${currentGenre.slug === c.slug ? 'text-orange-400' : 'text-zinc-300'}`}>
+                        <button key={c.slug} onClick={() => { handleGenreChange({ name: c.name, slug: c.slug, type: "quoc-gia" }); setIsMobileMenuOpen(false); }} className={`cursor-pointer text-left text-xs font-semibold hover:text-white ${currentGenre.slug === c.slug ? 'text-orange-400' : 'text-zinc-300'}`}>
                           {c.name}
                         </button>
                       ))}
@@ -1161,7 +1172,7 @@ export default function Home() {
                   <MovieRow title="Anime Mới Nhất" url="https://phimapi.com/v1/api/danh-sach/hoat-hinh?limit=10" onSelectMovie={handleSelectMovie} />
                 </div>
               ) : (
-                <div className="max-w-[95%] mx-auto px-4 pt-[140px] lg:pt-32 pb-4">
+                <div className={`max-w-[95%] mx-auto px-4 ${featuredMovie ? 'pt-8 lg:pt-12' : 'pt-[140px] lg:pt-32'} pb-4`}>
                   {/* Bộ lọc Sort */}
                   <div className="flex justify-between items-center mb-8">
                     <h2 className="text-2xl font-bold text-white flex items-center gap-2 border-l-4 border-orange-500 pl-3">
@@ -1209,6 +1220,76 @@ export default function Home() {
                       {sortedMovies.map(movie => (
                         <MovieCard key={movie.slug} movie={movie} onSelectMovie={handleSelectMovie} />
                       ))}
+                    </div>
+                  )}
+
+                  {/* Phân trang */}
+                  {totalPages > 1 && (
+                    <div className="mt-12 mb-8 flex justify-center w-full">
+                      <div className="flex gap-1 sm:gap-2 bg-zinc-900/80 backdrop-blur-xl p-1.5 sm:p-2 rounded-2xl border border-white/5 shadow-xl w-full max-w-fit overflow-x-auto hide-scrollbar">
+                        
+                        <button
+                          onClick={() => { setCurrentPage(prev => Math.max(1, prev - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                          disabled={currentPage === 1}
+                          className="cursor-pointer shrink-0 px-2 sm:px-4 py-2 min-w-[36px] min-h-[36px] sm:min-h-[40px] rounded-xl bg-zinc-800 text-zinc-300 font-semibold hover:bg-zinc-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-1 sm:gap-2"
+                        >
+                          <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                          <span className="hidden sm:inline">Trang trước</span>
+                        </button>
+                        
+                        <div className="flex gap-1 sm:gap-1.5 items-center px-1 sm:px-2 shrink-0">
+                          {(() => {
+                            const pages = [];
+                            // Hiển thị +- 1 trang xung quanh trang hiện tại để vừa vặn mobile
+                            let start = Math.max(1, currentPage - 1);
+                            let end = Math.min(totalPages, currentPage + 1);
+                            
+                            // Đảm bảo luôn hiện 3 trang liên tiếp nếu có thể
+                            if (start === 1 && end < totalPages) end = Math.min(totalPages, 3);
+                            if (end === totalPages && start > 1) start = Math.max(1, totalPages - 2);
+                            
+                            // Luôn hiện trang 1
+                            if (start > 1) {
+                              pages.push(
+                                <button key={1} onClick={() => { setCurrentPage(1); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="shrink-0 cursor-pointer w-8 h-8 sm:w-10 sm:h-10 text-xs sm:text-base rounded-xl font-bold flex items-center justify-center transition-all bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700 hover:text-white">1</button>
+                              );
+                              if (start > 2) pages.push(<span key="dots1" className="shrink-0 text-zinc-500 font-bold px-0.5 sm:px-1">...</span>);
+                            }
+                            
+                            // Các trang ở giữa
+                            for (let i = start; i <= end; i++) {
+                              pages.push(
+                                <button
+                                  key={i}
+                                  onClick={() => { setCurrentPage(i); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                                  className={`shrink-0 cursor-pointer w-8 h-8 sm:w-10 sm:h-10 text-xs sm:text-base rounded-xl font-bold flex items-center justify-center transition-all ${currentPage === i ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700 hover:text-white'}`}
+                                >
+                                  {i}
+                                </button>
+                              );
+                            }
+                            
+                            // Luôn hiện trang cuối
+                            if (end < totalPages) {
+                              if (end < totalPages - 1) pages.push(<span key="dots2" className="shrink-0 text-zinc-500 font-bold px-0.5 sm:px-1">...</span>);
+                              pages.push(
+                                <button key={totalPages} onClick={() => { setCurrentPage(totalPages); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="shrink-0 cursor-pointer w-8 h-8 sm:w-10 sm:h-10 text-xs sm:text-base rounded-xl font-bold flex items-center justify-center transition-all bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700 hover:text-white">{totalPages}</button>
+                              );
+                            }
+                            return pages;
+                          })()}
+                        </div>
+                        
+                        <button
+                          onClick={() => { setCurrentPage(prev => Math.min(totalPages, prev + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                          disabled={currentPage === totalPages}
+                          className="cursor-pointer shrink-0 px-2 sm:px-4 py-2 min-w-[36px] min-h-[36px] sm:min-h-[40px] rounded-xl bg-zinc-800 text-zinc-300 font-semibold hover:bg-zinc-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-1 sm:gap-2"
+                        >
+                          <span className="hidden sm:inline">Trang sau</span>
+                          <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        </button>
+                        
+                      </div>
                     </div>
                   )}
                 </div>
