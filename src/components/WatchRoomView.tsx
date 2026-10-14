@@ -372,7 +372,7 @@ export default function WatchRoomView({ room, user, onLeave }: WatchRoomViewProp
     await supabase.from('watch_room_messages').insert({ room_id: room.id, user_id: user.id, message: text });
   };
 
-  const firstEpisodeSrc = (movieData as Record<string, any>)?.episodes?.[0]?.server_data?.[0]?.link_m3u8;
+  const firstEpisodeSrc = (movieData as { episodes?: { server_data?: { link_m3u8?: string }[] }[] })?.episodes?.[0]?.server_data?.[0]?.link_m3u8;
 
   return (
     <div className="pt-[140px] lg:pt-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 relative z-10 animate-in fade-in duration-500">

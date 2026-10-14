@@ -1,0 +1,39 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  validate:
+    name: Lint, Type Check & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check (TypeScript)
+        run: npm run type-check
+
+      - name: Lint check (ESLint)
+        run: npm run lint
+
+      - name: Test production build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://pyefmwwjtsabrcprbnrb.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_T3tKOFyz13eOX7EPpHnXpw_j1SftGtt' }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY || 're_mock_test_key_ci_build' }}
+          FEEDBACK_RECEIVER_EMAIL: ${{ secrets.FEEDBACK_RECEIVER_EMAIL || 'khoadev27@gmail.com' }}
+        run: npm run build
