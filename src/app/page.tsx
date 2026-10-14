@@ -1484,26 +1484,6 @@ export default function Home() {
                   Xem Chung
                 </button>
 
-                {/* Nút Góp ý trên mobile */}
-                <button
-                  onClick={() => {
-                    setIsMobileMenuOpen(false);
-                    setFeedbackMovieContext(
-                      selectedMovie
-                        ? {
-                            name: selectedMovie.name,
-                            episode: currentEpisode?.name,
-                            url: typeof window !== 'undefined' ? window.location.href : '',
-                          }
-                        : null
-                    );
-                    setIsFeedbackOpen(true);
-                  }}
-                  className="text-left text-orange-400 hover:text-orange-300 cursor-pointer transition-colors flex items-center gap-1.5"
-                >
-                  💬 Góp Ý & Báo Lỗi
-                </button>
-
                 {/* Quốc gia */}
                 <div className="flex flex-col col-span-1">
                   <button
