@@ -781,10 +781,16 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, [supabase]);
 
-  // Kiểm tra lỗi xác thực OAuth từ URL query params
+  // Kiểm tra lỗi hoặc mã xác thực OAuth từ URL query params
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      if (code) {
+        window.location.href = `/auth/callback?code=${encodeURIComponent(code)}&next=${encodeURIComponent(window.location.pathname)}`;
+        return;
+      }
+
       const authErr = params.get('auth_error');
       if (authErr) {
         const decoded = decodeURIComponent(authErr);
