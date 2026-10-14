@@ -1142,8 +1142,8 @@ export default function Home() {
             : 'bg-gradient-to-b from-black/80 via-black/30 to-transparent'
         }`}
       >
-        <div className="max-w-[95%] mx-auto px-4 py-4 flex flex-col xl:flex-row items-center gap-4 2xl:gap-6 justify-between">
-          <div className="flex flex-col md:flex-row items-center gap-4 w-full xl:w-auto shrink-0">
+        <div className="max-w-[98%] mx-auto px-2 xl:px-4 py-2 xl:py-3 flex flex-col xl:flex-row items-center gap-3 xl:gap-2 2xl:gap-5 justify-between">
+          <div className="flex flex-col md:flex-row items-center gap-3 xl:gap-2 w-full xl:w-auto shrink-0">
             <div className="flex items-center justify-between w-full md:w-auto">
               <div className="flex items-center gap-3">
                 <button
@@ -1164,7 +1164,7 @@ export default function Home() {
                     if (!handleNavigationAttempt(e)) return;
                     handleGenreChange(genresMap[0]);
                   }}
-                  className="cursor-pointer text-3xl font-extrabold tracking-wide text-white shrink-0 hover:opacity-80 transition-opacity"
+                  className="cursor-pointer text-xl xl:text-2xl 2xl:text-3xl font-extrabold tracking-wide text-white shrink-0 hover:opacity-80 transition-opacity"
                 >
                   Rạp<span className="text-orange-500">Nhà</span>
                 </a>
@@ -1172,7 +1172,7 @@ export default function Home() {
             </div>
 
             {/* Search Bar */}
-            <div className="w-full md:w-[240px] 2xl:w-[320px] relative shrink">
+            <div className="w-full md:w-[180px] xl:w-[200px] 2xl:w-[300px] relative shrink">
               <input
                 type="search"
                 placeholder="Tìm kiếm phim, diễn viên..."
@@ -1219,7 +1219,7 @@ export default function Home() {
           </div>
 
           {/* Navigation Links (Desktop) */}
-          <nav className="hidden xl:flex items-center gap-3 2xl:gap-6 text-[12px] 2xl:text-sm font-semibold text-zinc-300 whitespace-nowrap shrink">
+          <nav className="hidden xl:flex items-center gap-2 2xl:gap-5 text-[11px] 2xl:text-[13px] font-semibold text-zinc-300 whitespace-nowrap shrink">
             <button
               onClick={(e) => {
                 if (!handleNavigationAttempt(e)) return;
@@ -1276,7 +1276,7 @@ export default function Home() {
           </nav>
 
           {/* User Auth & Actions Section (Desktop) */}
-          <div className="hidden xl:flex items-center gap-2 2xl:gap-3 shrink min-w-0">
+          <div className="hidden xl:flex items-center gap-1.5 2xl:gap-2 shrink min-w-0">
             {/* Nút Góp Ý (Tính năng 2) */}
             <button
               onClick={() => {
@@ -1291,7 +1291,7 @@ export default function Home() {
                 );
                 setIsFeedbackOpen(true);
               }}
-              className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 xl:py-2 rounded-full hover:bg-white/10 text-zinc-300 hover:text-white font-semibold text-xs xl:text-sm transition-colors whitespace-nowrap bg-zinc-900/60 backdrop-blur-xl border border-white/10 shadow-xl shrink-0"
+              className="cursor-pointer flex items-center gap-1 px-2 xl:px-2.5 py-1 xl:py-1.5 rounded-full hover:bg-white/10 text-zinc-300 hover:text-white font-semibold text-[10px] xl:text-xs 2xl:text-xs transition-colors whitespace-nowrap bg-zinc-900/60 backdrop-blur-xl border border-white/10 shadow-xl shrink-0"
               title="Gửi góp ý hoặc báo lỗi phim"
             >
               <svg className="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1310,7 +1310,7 @@ export default function Home() {
                   setIsJoinRoomOpen(true);
                 }
               }}
-              className="cursor-pointer flex items-center gap-1.5 px-3 xl:px-4 py-1.5 xl:py-2 rounded-full hover:bg-white/10 text-white font-bold text-xs xl:text-sm transition-colors whitespace-nowrap bg-zinc-900/60 backdrop-blur-xl border border-white/10 shadow-xl shrink-0"
+              className="cursor-pointer flex items-center gap-1 px-2 xl:px-3 py-1 xl:py-1.5 rounded-full hover:bg-white/10 text-white font-bold text-[10px] xl:text-xs 2xl:text-xs transition-colors whitespace-nowrap bg-zinc-900/60 backdrop-blur-xl border border-white/10 shadow-xl shrink-0"
               title="Tham gia phòng xem chung"
             >
               <svg className="w-4 h-4 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
@@ -1320,7 +1320,7 @@ export default function Home() {
             </button>
 
             {user ? (
-              <div className="flex items-center bg-zinc-200 rounded-full py-1.5 pl-3 pr-2 xl:pr-3 shadow-lg shrink min-w-0 gap-2">
+              <div className="flex items-center bg-zinc-200 rounded-full py-1 xl:py-1.5 pl-2 xl:pl-3 pr-1.5 xl:pr-2 shadow-lg shrink min-w-0 gap-1.5">
                 <div className="flex items-center gap-2 cursor-pointer group shrink min-w-0" title="Tài khoản của bạn">
                   {userProfile?.avatar_url ? (
                     <img src={userProfile.avatar_url} alt="Avatar" className="w-5 h-5 rounded-full object-cover shrink-0" />
@@ -1330,7 +1330,7 @@ export default function Home() {
                     </svg>
                   )}
                   <span
-                    className="text-zinc-900 font-bold text-[13px] xl:text-sm truncate block min-w-0 max-w-[120px]"
+                    className="text-zinc-900 font-bold text-[10px] xl:text-[11px] 2xl:text-xs truncate block min-w-0 max-w-[70px] xl:max-w-[90px] 2xl:max-w-[120px]"
                     title={userProfile?.username || user?.email?.split('@')[0]}
                   >
                     {userProfile?.username || user?.email?.split('@')[0]}
@@ -1352,7 +1352,7 @@ export default function Home() {
             ) : (
               <button
                 onClick={() => setIsAuthModalOpen(true)}
-                className="cursor-pointer px-4 xl:px-5 py-2 bg-zinc-200 hover:bg-white text-zinc-900 font-bold text-xs xl:text-sm rounded-full transition-all flex items-center gap-2 shadow-lg hover:scale-105 whitespace-nowrap shrink-0"
+                className="cursor-pointer px-2.5 xl:px-3 py-1 xl:py-1.5 bg-zinc-200 hover:bg-white text-zinc-900 font-bold text-[10px] xl:text-xs 2xl:text-xs rounded-full transition-all flex items-center gap-1.5 shadow-lg hover:scale-105 whitespace-nowrap shrink-0"
               >
                 <svg className="w-4 h-4 xl:w-5 xl:h-5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
