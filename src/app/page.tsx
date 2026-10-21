@@ -1,605 +1,54 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import Hls from "hls.js";
-import AuthModal from "@/components/AuthModal";
-import JoinRoomModal from "@/components/JoinRoomModal";
-import WatchRoomView from "@/components/WatchRoomView";
-import FeedbackModal from "@/components/FeedbackModal";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import dynamic from "next/dynamic";
+import MovieImage from "@/components/MovieImage";
+import { fetchWithCache } from "@/lib/apiCache";
 import { createWatchRoom } from "@/lib/room";
 import { createClient } from "@/lib/supabase/client";
 import { User } from "@supabase/supabase-js";
 import {
-  saveWatchProgress,
-  getMovieWatchProgress,
   fetchContinueWatchingList,
   deleteWatchProgress,
   formatWatchTime,
   syncLocalProgressToSupabase,
+  getMovieWatchProgress,
   WatchProgressItem,
 } from "@/lib/watchProgress";
-
-// --- Types cho API KKPhim ---
-type KKPhimListMovie = {
-  name: string;
-  slug: string;
-  origin_name: string;
-  thumb_url: string;
-  poster_url: string;
-  year: number;
-  time?: string;
-  quality?: string;
-  lang?: string;
-  episode_current?: string;
-};
-
-type KKPhimDetailMovie = KKPhimListMovie & {
-  director: string[];
-  actor: string[];
-  content: string;
-  category: { id: string; name: string; slug: string }[];
-};
-
-type KKPhimEpisodeItem = {
-  name: string;
-  slug: string;
-  filename: string;
-  link_embed: string;
-  link_m3u8: string;
-};
-
-type KKPhimEpisodes = {
-  server_name: string;
-  server_data: KKPhimEpisodeItem[];
-}[];
-
-type GenreItem = {
-  name: string;
-  slug: string;
-  type: string;
-};
-
-type UserProfile = {
-  id: string;
-  username: string;
-  avatar_url?: string;
-  created_at?: string;
-};
-
-type WatchRoom = {
-  id: string;
-  room_code: string;
-  host_id: string;
-  movie_slug: string;
-  movie_name: string;
-  status: string;
-};
+import type {
+  KKPhimListMovie,
+  KKPhimDetailMovie,
+  KKPhimEpisodeItem,
+  KKPhimEpisodes,
+  GenreItem,
+  UserProfile,
+  WatchRoom,
+} from "@/types/movie";
 
 // ==============================================================================
-// TRÌNH PHÁT VIDEO HLS PLAYER (TÍCH HỢP LƯU TIẾN ĐỘ & RESUME)
+// DYNAMIC IMPORTS (CODE SPLITTING ĐỂ TỐI ƯU BUNDLE SIZE TRANG ĐẦU)
 // ==============================================================================
-const HlsPlayer = ({
-  src,
-  movie,
-  episode,
-  user,
-  onNextEpisode,
-  onProgressSaved,
-}: {
-  src: string;
-  movie?: KKPhimListMovie | null;
-  episode?: KKPhimEpisodeItem | null;
-  user: User | null;
-  onNextEpisode?: () => void;
-  onProgressSaved?: () => void;
-}) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const hlsRef = useRef<Hls | null>(null);
-  const [levels, setLevels] = useState<{ height: number; width?: number }[]>([]);
-  const [currentLevel, setCurrentLevel] = useState<number>(-1);
-  const [playbackRate, setPlaybackRate] = useState(1);
-  const [showSettings, setShowSettings] = useState(false);
-  const [isUIActive, setIsUIActive] = useState(true);
-  const uiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastToggleTime = useRef(0);
-  const lastSavedTimeRef = useRef(0);
-  const isCompletedRef = useRef(false);
-  const supabase = createClient();
-
-  // State cho thông báo tiếp tục xem dở & đếm ngược tập tiếp theo
-  const [resumePrompt, setResumePrompt] = useState<{ seconds: number; formatted: string } | null>(null);
-  const [nextCountdown, setNextCountdown] = useState<number | null>(null);
-
-  useEffect(() => {
-    const handleActivity = () => {
-      setIsUIActive(true);
-      if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current);
-      if (!showSettings) {
-        uiTimeoutRef.current = setTimeout(() => setIsUIActive(false), 3000);
-      }
-    };
-
-    handleActivity();
-    return () => {
-      if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current);
-    };
-  }, [showSettings]);
-
-  // Kiểm tra tiến độ đã lưu khi tập phim tải lên
-  useEffect(() => {
-    isCompletedRef.current = false;
-    lastSavedTimeRef.current = 0;
-
-    if (!movie || !episode) return;
-
-    let isMounted = true;
-    getMovieWatchProgress(supabase, user, movie.slug, episode.name).then((saved) => {
-      if (!isMounted || !saved) return;
-      // Chỉ hiện prompt nếu đã xem được trên 10s và chưa xem hết
-      if (saved.progress_seconds > 10 && !saved.completed) {
-        setResumePrompt({
-          seconds: saved.progress_seconds,
-          formatted: formatWatchTime(saved.progress_seconds),
-        });
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      setResumePrompt(null);
-      setNextCountdown(null);
-    };
-  }, [movie, episode, user, supabase]);
-
-  // Tự động ẩn banner tiếp tục xem sau 12 giây nếu người xem không bấm
-  useEffect(() => {
-    if (!resumePrompt) return;
-    const timer = setTimeout(() => {
-      setResumePrompt(null);
-    }, 12000);
-    return () => clearTimeout(timer);
-  }, [resumePrompt]);
-
-  // Đếm ngược tự động chuyển tập khi gần hết phim
-  useEffect(() => {
-    if (nextCountdown === null) return;
-    const timer = setInterval(() => {
-      setNextCountdown((prev) => {
-        if (prev === null) return null;
-        if (prev <= 1) {
-          if (onNextEpisode) onNextEpisode();
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [nextCountdown, onNextEpisode]);
-
-  // Lưu tiến độ khi người dùng rời trang, tắt tab hoặc ẩn trình duyệt
-  useEffect(() => {
-    const saveCurrentProgress = () => {
-      const video = videoRef.current;
-      if (!video || !movie || !episode) return;
-      const current = video.currentTime;
-      const dur = video.duration || 0;
-      if (current > 5) {
-        const isNearEnd = dur > 60 && dur - current <= 30;
-        saveWatchProgress(supabase, user, {
-          movie_slug: movie.slug,
-          movie_name: movie.name,
-          movie_poster: movie.poster_url || movie.thumb_url || '',
-          episode_name: episode.name,
-          episode_slug: episode.slug || '',
-          progress_seconds: isNearEnd ? 0 : current,
-          duration_seconds: dur,
-          completed: isNearEnd,
-        });
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        saveCurrentProgress();
-      }
-    };
-
-    window.addEventListener('beforeunload', saveCurrentProgress);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener('beforeunload', saveCurrentProgress);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      saveCurrentProgress();
-    };
-  }, [movie, episode, user, supabase]);
-
-  // Khởi tạo nguồn HLS
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !src) return;
-
-    if (Hls.isSupported()) {
-      const hls = new Hls({ maxMaxBufferLength: 100 });
-      hlsRef.current = hls;
-
-      hls.loadSource(src);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
-        setLevels(data.levels);
-
-        const savedQuality = localStorage.getItem('preferred_quality');
-        if (savedQuality && savedQuality !== 'auto') {
-          const targetHeight = parseInt(savedQuality, 10);
-          const index = data.levels.findIndex((l: { height: number }) => l.height === targetHeight);
-          if (index !== -1) {
-            hls.currentLevel = index;
-            setCurrentLevel(index);
-          }
-        }
-
-        video.play().catch((e) => console.log('Play failed', e));
-      });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = src;
-      video.addEventListener('loadedmetadata', () => {
-        video.play().catch((e) => console.log('Play failed', e));
-      });
-    }
-
-    return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-      }
-    };
-  }, [src]);
-
-  // Xử lý đổi chất lượng video
-  const handleQualityChange = (index: number, height?: number) => {
-    if (hlsRef.current) {
-      hlsRef.current.currentLevel = index;
-      setCurrentLevel(index);
-      if (index === -1) {
-        localStorage.setItem('preferred_quality', 'auto');
-      } else if (height) {
-        localStorage.setItem('preferred_quality', height.toString());
-      }
-    }
-    setShowSettings(false);
-  };
-
-  // Xử lý đổi tốc độ phát
-  const handleSpeedChange = (rate: number) => {
-    if (videoRef.current) {
-      videoRef.current.playbackRate = rate;
-      setPlaybackRate(rate);
-    }
-    setShowSettings(false);
-  };
-
-  // Throttle cập nhật tiến độ xem khi đang phát (mỗi 12 giây)
-  const handleTimeUpdate = () => {
-    const video = videoRef.current;
-    if (!video || !movie || !episode) return;
-    const current = video.currentTime;
-    const dur = video.duration || 0;
-
-    // Khi cách đoạn kết dưới 30 giây: đánh dấu xem xong để tránh sau này mở lại ngay kết thúc
-    if (dur > 60 && dur - current <= 30) {
-      if (!isCompletedRef.current) {
-        isCompletedRef.current = true;
-        saveWatchProgress(supabase, user, {
-          movie_slug: movie.slug,
-          movie_name: movie.name,
-          movie_poster: movie.poster_url || movie.thumb_url || '',
-          episode_name: episode.name,
-          episode_slug: episode.slug || '',
-          progress_seconds: 0,
-          duration_seconds: dur,
-          completed: true,
-        });
-        onProgressSaved?.();
-
-        if (onNextEpisode && nextCountdown === null) {
-          setNextCountdown(10);
-        }
-      }
-      return;
-    }
-
-    // Ghi tiến độ định kỳ mỗi 12 giây
-    if (Math.abs(current - lastSavedTimeRef.current) >= 12 && current > 5) {
-      lastSavedTimeRef.current = current;
-      saveWatchProgress(supabase, user, {
-        movie_slug: movie.slug,
-        movie_name: movie.name,
-        movie_poster: movie.poster_url || movie.thumb_url || '',
-        episode_name: episode.name,
-        episode_slug: episode.slug || '',
-        progress_seconds: current,
-        duration_seconds: dur,
-        completed: false,
-      });
-      onProgressSaved?.();
-    }
-  };
-
-  // Ghi tiến độ ngay khi tạm dừng video
-  const handlePause = () => {
-    lastToggleTime.current = Date.now();
-    const video = videoRef.current;
-    if (!video || !movie || !episode) return;
-    const current = video.currentTime;
-    const dur = video.duration || 0;
-    if (current > 5 && (dur === 0 || dur - current > 30)) {
-      saveWatchProgress(supabase, user, {
-        movie_slug: movie.slug,
-        movie_name: movie.name,
-        movie_poster: movie.poster_url || movie.thumb_url || '',
-        episode_name: episode.name,
-        episode_slug: episode.slug || '',
-        progress_seconds: current,
-        duration_seconds: dur,
-        completed: false,
-      });
-      lastSavedTimeRef.current = current;
-      onProgressSaved?.();
-    }
-  };
-
-  // Xử lý khi video kết thúc
-  const handleEnded = () => {
-    lastToggleTime.current = Date.now();
-    const video = videoRef.current;
-    if (!video || !movie || !episode) return;
-
-    saveWatchProgress(supabase, user, {
-      movie_slug: movie.slug,
-      movie_name: movie.name,
-      movie_poster: movie.poster_url || movie.thumb_url || '',
-      episode_name: episode.name,
-      episode_slug: episode.slug || '',
-      progress_seconds: 0,
-      duration_seconds: video.duration || 0,
-      completed: true,
-    });
-    onProgressSaved?.();
-
-    if (onNextEpisode) {
-      onNextEpisode();
-    }
-  };
-
-  return (
-    <div
-      className="relative w-full h-full group bg-black rounded-2xl"
-      onMouseMove={() => {
-        setIsUIActive(true);
-        if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current);
-        if (!showSettings) uiTimeoutRef.current = setTimeout(() => setIsUIActive(false), 3000);
-      }}
-      onTouchStart={() => {
-        setIsUIActive(true);
-        if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current);
-        if (!showSettings) uiTimeoutRef.current = setTimeout(() => setIsUIActive(false), 3000);
-      }}
-      onClick={() => {
-        setIsUIActive(true);
-        if (uiTimeoutRef.current) clearTimeout(uiTimeoutRef.current);
-        if (!showSettings) uiTimeoutRef.current = setTimeout(() => setIsUIActive(false), 3000);
-      }}
-    >
-      <video
-        ref={videoRef}
-        className="cursor-pointer w-full h-full object-contain rounded-2xl"
-        controls
-        playsInline
-        autoPlay
-        onPlay={() => {
-          lastToggleTime.current = Date.now();
-        }}
-        onPause={handlePause}
-        onTimeUpdate={handleTimeUpdate}
-        onEnded={handleEnded}
-        onSeeking={() => {
-          lastToggleTime.current = Date.now();
-        }}
-        onSeeked={() => {
-          lastToggleTime.current = Date.now();
-        }}
-        onVolumeChange={() => {
-          lastToggleTime.current = Date.now();
-        }}
-        onRateChange={() => {
-          lastToggleTime.current = Date.now();
-        }}
-        onClick={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          if (rect.height - (e.clientY - rect.top) < 70) return;
-
-          setTimeout(() => {
-            if (Date.now() - lastToggleTime.current < 150) return;
-            if (videoRef.current) {
-              if (videoRef.current.paused) videoRef.current.play();
-              else videoRef.current.pause();
-            }
-          }, 50);
-        }}
-        onTouchEnd={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const touch = e.changedTouches[0];
-          if (rect.height - (touch.clientY - rect.top) < 70) return;
-
-          setTimeout(() => {
-            if (Date.now() - lastToggleTime.current < 150) return;
-            if (videoRef.current) {
-              if (videoRef.current.paused) videoRef.current.play();
-              else videoRef.current.pause();
-            }
-          }, 50);
-        }}
-      />
-
-      {/* Thông báo tiếp tục xem dở (Floating Resume Prompt) */}
-      {resumePrompt && (
-        <div className="absolute bottom-16 left-4 right-4 sm:left-6 sm:right-auto sm:max-w-md z-40 bg-zinc-900/95 backdrop-blur-md border border-orange-500/40 rounded-2xl p-4 shadow-2xl animate-in fade-in slide-in-from-bottom-3 duration-300">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-500/20 text-orange-400 flex items-center justify-center shrink-0 border border-orange-500/30">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-white font-bold text-sm leading-tight mb-1">
-                Bạn đang xem dở tại <span className="text-orange-400 font-extrabold">{resumePrompt.formatted}</span>
-              </div>
-              <p className="text-zinc-400 text-xs mb-3">Bạn có muốn tiếp tục xem từ thời điểm này không?</p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (videoRef.current) {
-                      videoRef.current.currentTime = resumePrompt.seconds;
-                      videoRef.current.play().catch(() => {});
-                    }
-                    setResumePrompt(null);
-                  }}
-                  className="cursor-pointer px-4 py-1.5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-lg transition-all shadow-md shadow-orange-500/20 flex items-center gap-1.5"
-                >
-                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                  Tiếp tục xem
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (videoRef.current) {
-                      videoRef.current.currentTime = 0;
-                    }
-                    setResumePrompt(null);
-                  }}
-                  className="cursor-pointer px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white font-semibold text-xs rounded-lg transition-colors border border-white/5"
-                >
-                  Xem lại từ đầu
-                </button>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setResumePrompt(null)}
-              className="cursor-pointer text-zinc-500 hover:text-white p-1"
-              title="Đóng thông báo"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Banner đếm ngược chuyển tập kế tiếp */}
-      {nextCountdown !== null && onNextEpisode && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 bg-zinc-900/95 backdrop-blur-md border border-orange-500/50 rounded-2xl px-5 py-3 shadow-2xl flex items-center gap-4 animate-in fade-in zoom-in-95">
-          <span className="text-white text-xs sm:text-sm font-semibold">
-            Tập tiếp theo sau <strong className="text-orange-400 font-extrabold">{nextCountdown}s</strong>
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setNextCountdown(null);
-              onNextEpisode();
-            }}
-            className="cursor-pointer px-3 py-1 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-lg shadow-md"
-          >
-            Chuyển ngay
-          </button>
-          <button
-            type="button"
-            onClick={() => setNextCountdown(null)}
-            className="cursor-pointer text-zinc-400 hover:text-white text-xs"
-          >
-            Hủy
-          </button>
-        </div>
-      )}
-
-      {/* Nút Cài đặt Chất lượng & Tốc độ */}
-      <div className="absolute top-4 right-4 z-50">
-        <button
-          onClick={() => setShowSettings(!showSettings)}
-          className={`cursor-pointer w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur text-white flex items-center justify-center transition-all md:opacity-0 md:group-hover:opacity-100 ${
-            isUIActive || showSettings ? 'opacity-100' : 'opacity-0 pointer-events-none'
-          }`}
-          title="Cài đặt phát"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </button>
-
-        {showSettings && (
-          <div className="absolute top-12 right-0 bg-black/90 backdrop-blur-md rounded-xl p-3 border border-white/10 w-56 animate-in fade-in zoom-in-95 shadow-2xl">
-            {levels.length > 0 && (
-              <div className="mb-3">
-                <div className="text-[10px] font-bold text-zinc-400 mb-2 uppercase tracking-wider">Chất lượng</div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  <button
-                    onClick={() => handleQualityChange(-1)}
-                    className={`cursor-pointer px-2 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                      currentLevel === -1 ? 'bg-orange-500 text-white' : 'bg-white/5 text-zinc-300 hover:bg-white/10'
-                    }`}
-                  >
-                    Auto
-                  </button>
-                  {levels.slice().reverse().map((level, idx) => {
-                    const originalIndex = levels.length - 1 - idx;
-                    const getQualityLabel = (l: { height: number; width?: number }) => {
-                      if ((l.width && l.width >= 1900) || l.height >= 1000 || l.height === 804) return '1080p';
-                      if ((l.width && l.width >= 1200) || l.height >= 700 || l.height === 536) return '720p';
-                      if ((l.width && l.width >= 800) || l.height >= 480 || l.height === 358) return '480p';
-                      return `${l.height}p`;
-                    };
-                    return (
-                      <button
-                        key={originalIndex}
-                        onClick={() => handleQualityChange(originalIndex, level.height)}
-                        className={`cursor-pointer px-2 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                          currentLevel === originalIndex ? 'bg-orange-500 text-white' : 'bg-white/5 text-zinc-300 hover:bg-white/10'
-                        }`}
-                      >
-                        {getQualityLabel(level)}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <div className="text-[10px] font-bold text-zinc-400 mb-2 uppercase tracking-wider">Tốc độ</div>
-              <div className="grid grid-cols-3 gap-1.5">
-                {[0.5, 1, 1.25, 1.5, 2].map((rate) => (
-                  <button
-                    key={`speed-${rate}`}
-                    onClick={() => handleSpeedChange(rate)}
-                    className={`cursor-pointer px-2 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                      playbackRate === rate ? 'bg-orange-500 text-white' : 'bg-white/5 text-zinc-300 hover:bg-white/10'
-                    }`}
-                  >
-                    {rate}x
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+const DynamicHlsPlayer = dynamic(() => import("@/components/HlsPlayer"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full aspect-video bg-zinc-950 rounded-2xl flex items-center justify-center animate-pulse">
+      <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
     </div>
-  );
-};
+  ),
+});
+
+const DynamicWatchRoomView = dynamic(() => import("@/components/WatchRoomView"), {
+  ssr: false,
+  loading: () => (
+    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+      <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+  ),
+});
+
+const DynamicAuthModal = dynamic(() => import("@/components/AuthModal"), { ssr: false });
+const DynamicFeedbackModal = dynamic(() => import("@/components/FeedbackModal"), { ssr: false });
+const DynamicJoinRoomModal = dynamic(() => import("@/components/JoinRoomModal"), { ssr: false });
 
 // ==============================================================================
 // DANH SÁCH THỂ LOẠI & UTILITIES
@@ -616,11 +65,6 @@ const genresMap: GenreItem[] = [
   { name: "Hài hước", slug: "hai-huoc", type: "the-loai" },
 ];
 
-const getImage = (url: string | undefined) => {
-  if (!url) return undefined;
-  return url.startsWith("http") ? url : `https://phimimg.com/${url}`;
-};
-
 const getScore = (slug: string) => {
   let hash = 0;
   for (let i = 0; i < slug.length; i++) {
@@ -629,92 +73,110 @@ const getScore = (slug: string) => {
   return (6.5 + (Math.abs(hash) % 30) / 10).toFixed(1);
 };
 
-const MovieCard = ({
-  movie,
-  onSelectMovie,
-  className = "",
-}: {
-  movie: KKPhimListMovie;
-  onSelectMovie: (m: KKPhimListMovie) => void;
-  className?: string;
-}) => (
-  <button
-    onClick={() => onSelectMovie(movie)}
-    className={`text-left group outline-none cursor-pointer flex flex-col ${className}`}
-  >
-    <div className="aspect-poster w-full rounded-xl mb-3 relative overflow-hidden flex flex-col justify-end shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl group-focus-visible:ring-2 ring-orange-500/50 bg-zinc-900 border border-white/5">
-      <img
-        src={getImage(movie.thumb_url || movie.poster_url)}
-        alt={movie.name}
-        className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/90 via-transparent to-transparent opacity-80 group-hover:opacity-100 transition-opacity"></div>
+// MovieCard được memoize để chống re-render thừa khi cuộn trang hoặc gõ tìm kiếm
+const MovieCard = React.memo(
+  ({
+    movie,
+    onSelectMovie,
+    className = "",
+  }: {
+    movie: KKPhimListMovie;
+    onSelectMovie: (m: KKPhimListMovie) => void;
+    className?: string;
+  }) => (
+    <button
+      onClick={() => onSelectMovie(movie)}
+      className={`text-left group outline-none cursor-pointer flex flex-col ${className}`}
+    >
+      <div className="aspect-poster w-full rounded-xl mb-3 relative overflow-hidden flex flex-col justify-end shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl group-focus-visible:ring-2 ring-orange-500/50 bg-zinc-900 border border-white/5">
+        <MovieImage
+          src={movie.thumb_url || movie.poster_url}
+          alt={movie.name}
+          className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/90 via-transparent to-transparent opacity-80 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
 
-      <div className="absolute top-2 left-2 bg-zinc-950/80 backdrop-blur-sm text-orange-500 border border-orange-500/30 text-[10px] font-medium px-1.5 py-0.5 rounded flex items-center gap-1">
-        ★ {getScore(movie.slug)}
-      </div>
-      {movie.episode_current && (
-        <div className="absolute top-2 right-2 bg-orange-500 text-white text-[10px] font-medium px-1.5 py-0.5 rounded shadow-sm z-20">
-          {movie.episode_current}
+        <div className="absolute top-2 left-2 bg-zinc-950/80 backdrop-blur-sm text-orange-500 border border-orange-500/30 text-[10px] font-medium px-1.5 py-0.5 rounded flex items-center gap-1 z-20">
+          ★ {getScore(movie.slug)}
         </div>
-      )}
+        {movie.episode_current && (
+          <div className="absolute top-2 right-2 bg-orange-500 text-white text-[10px] font-medium px-1.5 py-0.5 rounded shadow-sm z-20">
+            {movie.episode_current}
+          </div>
+        )}
 
-      {/* Bottom Badges */}
-      <div className="absolute bottom-0 left-0 w-full p-2 flex justify-between items-center z-20 gap-1">
-        {movie.lang && (
-          <span className="text-[9px] font-medium uppercase tracking-wider text-white bg-white/20 backdrop-blur-md px-1.5 py-0.5 rounded truncate max-w-[70%]">
-            {movie.lang}
-          </span>
-        )}
-        {movie.quality && (
-          <span className="text-[9px] font-medium uppercase tracking-wider text-orange-400 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded ml-auto">
-            {movie.quality}
-          </span>
-        )}
+        {/* Bottom Badges */}
+        <div className="absolute bottom-0 left-0 w-full p-2 flex justify-between items-center z-20 gap-1">
+          {movie.lang && (
+            <span className="text-[9px] font-medium uppercase tracking-wider text-white bg-white/20 backdrop-blur-md px-1.5 py-0.5 rounded truncate max-w-[70%]">
+              {movie.lang}
+            </span>
+          )}
+          {movie.quality && (
+            <span className="text-[9px] font-medium uppercase tracking-wider text-orange-400 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded ml-auto">
+              {movie.quality}
+            </span>
+          )}
+        </div>
       </div>
-    </div>
-    <h3 className="font-semibold text-sm leading-tight mb-1 line-clamp-1 group-hover:text-orange-500 transition-colors text-white mt-2">
-      {movie.name}
-    </h3>
-  </button>
+      <h3 className="font-semibold text-sm leading-tight mb-1 line-clamp-1 group-hover:text-orange-500 transition-colors text-white mt-2">
+        {movie.name}
+      </h3>
+    </button>
+  )
 );
+MovieCard.displayName = "MovieCard";
 
-const MovieRow = ({
-  title,
-  url,
-  onSelectMovie,
-}: {
-  title: string;
-  url: string;
-  onSelectMovie: (m: KKPhimListMovie) => void;
-}) => {
-  const [movies, setMovies] = useState<KKPhimListMovie[]>([]);
-  useEffect(() => {
-    fetch(url)
-      .then((r) => r.json())
-      .then((data) => {
-        setMovies(data?.data?.items || data?.items || []);
-      })
-      .catch((err) => console.warn('Lỗi tải hàng phim:', err));
-  }, [url]);
+const MovieRow = React.memo(
+  ({
+    title,
+    url,
+    onSelectMovie,
+  }: {
+    title: string;
+    url: string;
+    onSelectMovie: (m: KKPhimListMovie) => void;
+  }) => {
+    const [movies, setMovies] = useState<KKPhimListMovie[]>([]);
 
-  if (movies.length === 0) return null;
-  return (
-    <div className="mb-10 w-full">
-      <h2 className="text-xl md:text-2xl font-bold text-white mb-4 flex items-center justify-between group cursor-pointer border-l-4 border-orange-500 pl-3">
-        {title}
-        <svg className="w-5 h-5 text-zinc-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
-      </h2>
-      <div className="flex overflow-x-auto gap-4 snap-x custom-scrollbar pb-4" style={{ WebkitOverflowScrolling: 'touch' }}>
-        {movies.map((m) => (
-          <MovieCard key={m.slug} movie={m} onSelectMovie={onSelectMovie} className="w-[140px] md:w-[180px] lg:w-[200px] shrink-0 snap-start" />
-        ))}
+    useEffect(() => {
+      let isMounted = true;
+      fetchWithCache<{ data?: { items?: KKPhimListMovie[] }; items?: KKPhimListMovie[] }>(
+        url,
+        10 * 60 * 1000
+      )
+        .then((data) => {
+          if (isMounted) {
+            setMovies(data?.data?.items || data?.items || []);
+          }
+        })
+        .catch((err) => console.warn("Lỗi tải hàng phim:", err));
+
+      return () => {
+        isMounted = false;
+      };
+    }, [url]);
+
+    if (movies.length === 0) return null;
+
+    return (
+      <div className="mb-10 w-full">
+        <h2 className="text-xl md:text-2xl font-bold text-white mb-4 flex items-center justify-between group cursor-pointer border-l-4 border-orange-500 pl-3">
+          {title}
+          <svg className="w-5 h-5 text-zinc-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </h2>
+        <div className="flex overflow-x-auto gap-4 snap-x custom-scrollbar pb-4" style={{ WebkitOverflowScrolling: "touch" }}>
+          {movies.map((m) => (
+            <MovieCard key={m.slug} movie={m} onSelectMovie={onSelectMovie} className="w-[140px] md:w-[180px] lg:w-[200px] shrink-0 snap-start" />
+          ))}
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  }
+);
+MovieRow.displayName = "MovieRow";
 
 // ==============================================================================
 // TRANG CHỦ HOME COMPONENT
@@ -739,11 +201,11 @@ export default function Home() {
   const [authErrorToast, setAuthErrorToast] = useState<string | null>(null);
   const supabase = createClient();
 
-  // Watch Progress states (Tính năng 1)
+  // Watch Progress states
   const [continueWatching, setContinueWatching] = useState<WatchProgressItem[]>([]);
   const [movieProgress, setMovieProgress] = useState<WatchProgressItem | null>(null);
 
-  // Feedback states (Tính năng 2)
+  // Feedback states
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [feedbackMovieContext, setFeedbackMovieContext] = useState<{
     name: string;
@@ -783,19 +245,20 @@ export default function Home() {
 
   // Kiểm tra lỗi hoặc mã xác thực OAuth từ URL query params
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      const code = params.get('code');
+      const code = params.get("code");
       if (code) {
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- /auth/callback is a server route handler that exchanges OAuth code and sets session cookies
         window.location.href = `/auth/callback?code=${encodeURIComponent(code)}&next=${encodeURIComponent(window.location.pathname)}`;
         return;
       }
 
-      const authErr = params.get('auth_error');
+      const authErr = params.get("auth_error");
       if (authErr) {
         const decoded = decodeURIComponent(authErr);
         const cleanUrl = window.location.pathname;
-        window.history.replaceState({}, '', cleanUrl);
+        window.history.replaceState({}, "", cleanUrl);
         setTimeout(() => setAuthErrorToast(decoded), 0);
       }
     }
@@ -807,23 +270,22 @@ export default function Home() {
     let isMounted = true;
 
     supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
       .maybeSingle()
       .then(async ({ data }) => {
         if (!isMounted) return;
         if (data) {
           if (!data.username && user.email) {
-            const fallbackUsername = user.email.split('@')[0];
-            await supabase.from('profiles').update({ username: fallbackUsername }).eq('id', user.id);
+            const fallbackUsername = user.email.split("@")[0];
+            await supabase.from("profiles").update({ username: fallbackUsername }).eq("id", user.id);
             data.username = fallbackUsername;
           }
           setUserProfile(data);
         } else {
-          // Người dùng Google lần đầu đăng nhập: tạo hồ sơ tài khoản tự động
           const rawName = user.user_metadata?.full_name || user.user_metadata?.name;
-          const fallbackUsername = user.email ? user.email.split('@')[0] : 'Khán giả';
+          const fallbackUsername = user.email ? user.email.split("@")[0] : "Khán giả";
           const username = rawName && rawName.trim() ? rawName.trim() : fallbackUsername;
           const avatarUrl =
             user.user_metadata?.avatar_url ||
@@ -831,12 +293,12 @@ export default function Home() {
             `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`;
 
           const newProfile = { id: user.id, username, avatar_url: avatarUrl };
-          await supabase.from('profiles').insert(newProfile);
+          await supabase.from("profiles").insert(newProfile);
           if (isMounted) setUserProfile(newProfile);
         }
       });
 
-    // Đồng bộ dữ liệu xem phim dở từ LocalStorage lên Supabase
+    // Đồng bộ dữ liệu xem phim dở từ LocalStorage lên Supabase khi đăng nhập
     syncLocalProgressToSupabase(supabase, user);
 
     return () => {
@@ -860,31 +322,48 @@ export default function Home() {
     };
   }, [supabase, user]);
 
-  // API Quốc gia
+  // API Quốc gia với in-memory cache
   const [countries, setCountries] = useState<{ name: string; slug: string }[]>([]);
   useEffect(() => {
-    fetch("https://phimapi.com/quoc-gia")
-      .then((res) => res.json())
+    let isMounted = true;
+    fetchWithCache<{ data?: { items?: { name: string; slug: string }[] } }>(
+      "https://phimapi.com/quoc-gia",
+      60 * 60 * 1000
+    )
       .then((data) => {
-        if (data?.data?.items) {
+        if (isMounted && data?.data?.items) {
           setCountries(data.data.items);
         }
       })
       .catch(console.error);
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Hero featured movie state
   const [featuredMovie, setFeaturedMovie] = useState<KKPhimListMovie | null>(null);
 
-  // Scroll state for header
+  // Tối ưu scroll header với passive listener & requestAnimationFrame
   const [isScrolled, setIsScrolled] = useState(false);
   useEffect(() => {
-    const handleScroll = () => setIsScrolled(window.scrollY > 50);
-    window.addEventListener("scroll", handleScroll);
+    let ticking = false;
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const scrolled = window.scrollY > 50;
+          setIsScrolled((prev) => (prev !== scrolled ? scrolled : prev));
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Search states
+  // Search states với AbortController chống race conditions
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<KKPhimListMovie[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -918,8 +397,9 @@ export default function Home() {
     };
   }, [selectedMovie, user, supabase]);
 
-  // Fetch Danh sách phim chính
+  // Fetch Danh sách phim chính với in-memory cache
   useEffect(() => {
+    let isMounted = true;
     const fetchMovies = async () => {
       setLoading(true);
       try {
@@ -931,17 +411,31 @@ export default function Home() {
         } else if (currentGenre.type === "danh-sach") {
           url = `https://phimapi.com/v1/api/danh-sach/${currentGenre.slug}?page=${currentPage}`;
         }
-        const res = await fetch(url);
-        const data = await res.json();
+
+        const data = await fetchWithCache<{
+          data?: {
+            items?: KKPhimListMovie[];
+            params?: { pagination?: { totalPages?: number } };
+          };
+          items?: KKPhimListMovie[];
+          pagination?: { totalPages?: number };
+        }>(url, 5 * 60 * 1000);
+
+        if (!isMounted) return;
 
         const items = data?.data?.items || data?.items || [];
         setMovies(items);
 
-        const total = data?.data?.params?.pagination?.totalPages || data?.pagination?.totalPages || 1;
+        const total =
+          data?.data?.params?.pagination?.totalPages ||
+          data?.pagination?.totalPages ||
+          1;
         setTotalPages(total);
 
         if (items.length > 0) {
-          const bestMovie = [...items].sort((a, b) => parseFloat(getScore(b.slug)) - parseFloat(getScore(a.slug)))[0];
+          const bestMovie = [...items].sort(
+            (a, b) => parseFloat(getScore(b.slug)) - parseFloat(getScore(a.slug))
+          )[0];
           setFeaturedMovie(bestMovie);
         } else {
           setFeaturedMovie(null);
@@ -949,53 +443,69 @@ export default function Home() {
       } catch (error) {
         console.error("Lỗi khi tải phim:", error);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
     fetchMovies();
+
+    return () => {
+      isMounted = false;
+    };
   }, [currentGenre, currentPage]);
 
-  const sortedMovies = [...movies].sort((a, b) => {
-    const yearA = Number(a.year) || 0;
-    const yearB = Number(b.year) || 0;
-    if (currentSort === 'newest') return yearB - yearA;
-    if (currentSort === 'az') return a.name.localeCompare(b.name);
-    if (currentSort === 'rating') return parseFloat(getScore(b.slug)) - parseFloat(getScore(a.slug));
-    return 0;
-  });
+  // Memoize sortedMovies để tránh tính toán lại trên mọi render
+  const sortedMovies = useMemo(() => {
+    return [...movies].sort((a, b) => {
+      const yearA = Number(a.year) || 0;
+      const yearB = Number(b.year) || 0;
+      if (currentSort === "newest") return yearB - yearA;
+      if (currentSort === "az") return a.name.localeCompare(b.name);
+      if (currentSort === "rating")
+        return parseFloat(getScore(b.slug)) - parseFloat(getScore(a.slug));
+      return 0;
+    });
+  }, [movies, currentSort]);
 
-  useEffect(() => {
-    if (sortedMovies.length > 0 && featuredMovie) {
-      const exists = sortedMovies.find((m) => m.slug === featuredMovie.slug);
-      if (!exists) {
-        setTimeout(() => setFeaturedMovie(sortedMovies[0]), 0);
-      }
+  // Tự động xác định hero movie hoạt động mà không gây cascading render
+  const activeHeroMovie = useMemo(() => {
+    if (featuredMovie && sortedMovies.some((m) => m.slug === featuredMovie.slug)) {
+      return featuredMovie;
     }
-  }, [sortedMovies, featuredMovie]);
+    return sortedMovies[0] || null;
+  }, [featuredMovie, sortedMovies]);
 
-  // Live Search
+  // Live Search với AbortController chống race condition
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      return;
-    }
+    const trimmed = searchQuery.trim();
+    if (!trimmed) return;
 
+    const controller = new AbortController();
     const searchTimer = setTimeout(async () => {
       setIsSearching(true);
       setShowDropdown(true);
       try {
-        const res = await fetch(`https://phimapi.com/v1/api/tim-kiem?keyword=${encodeURIComponent(searchQuery)}`);
+        const res = await fetch(
+          `https://phimapi.com/v1/api/tim-kiem?keyword=${encodeURIComponent(trimmed)}`,
+          { signal: controller.signal }
+        );
         const data = await res.json();
         const items = data?.data?.items || [];
         setSearchResults(items);
-      } catch (err) {
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") {
+          return;
+        }
         console.error("Lỗi khi tìm kiếm:", err);
         setSearchResults([]);
       } finally {
         setIsSearching(false);
       }
-    }, 500);
+    }, 400);
 
-    return () => clearTimeout(searchTimer);
+    return () => {
+      clearTimeout(searchTimer);
+      controller.abort();
+    };
   }, [searchQuery]);
 
   const handleSelectMovie = async (movie: KKPhimListMovie) => {
@@ -1005,12 +515,16 @@ export default function Home() {
     setPlaying(false);
     setCurrentEpisode(null);
     setEpisodeChunk(0);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: "smooth" });
 
     setDetailLoading(true);
     try {
-      const res = await fetch(`https://phimapi.com/phim/${movie.slug}`);
-      const data = await res.json();
+      const data = await fetchWithCache<{
+        status: boolean;
+        movie: KKPhimDetailMovie;
+        episodes: KKPhimEpisodes;
+      }>(`https://phimapi.com/phim/${movie.slug}`, 10 * 60 * 1000);
+
       if (data.status) {
         setMovieDetail(data.movie);
         setEpisodesDetail(data.episodes);
@@ -1041,7 +555,7 @@ export default function Home() {
   const playEpisode = (episode: KKPhimEpisodeItem) => {
     setCurrentEpisode(episode);
     setPlaying(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const playFirstEpisode = () => {
@@ -1067,9 +581,9 @@ export default function Home() {
     const movieObj: KKPhimListMovie = {
       name: item.movie_name,
       slug: item.movie_slug,
-      origin_name: '',
-      thumb_url: item.movie_poster || '',
-      poster_url: item.movie_poster || '',
+      origin_name: "",
+      thumb_url: item.movie_poster || "",
+      poster_url: item.movie_poster || "",
       year: new Date().getFullYear(),
     };
 
@@ -1079,19 +593,24 @@ export default function Home() {
     setPlaying(false);
     setCurrentEpisode(null);
     setEpisodeChunk(0);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: "smooth" });
 
     setDetailLoading(true);
     try {
-      const res = await fetch(`https://phimapi.com/phim/${item.movie_slug}`);
-      const data = await res.json();
+      const data = await fetchWithCache<{
+        status: boolean;
+        movie: KKPhimDetailMovie;
+        episodes: KKPhimEpisodes;
+      }>(`https://phimapi.com/phim/${item.movie_slug}`, 10 * 60 * 1000);
+
       if (data.status) {
         setMovieDetail(data.movie);
         setEpisodesDetail(data.episodes);
 
         const allEpisodes = data.episodes?.[0]?.server_data || [];
         const targetEpisode =
-          allEpisodes.find((ep: KKPhimEpisodeItem) => ep.name === item.episode_name) || allEpisodes[0];
+          allEpisodes.find((ep: KKPhimEpisodeItem) => ep.name === item.episode_name) ||
+          allEpisodes[0];
 
         if (targetEpisode) {
           setCurrentEpisode(targetEpisode);
@@ -1138,8 +657,8 @@ export default function Home() {
       <header
         className={`fixed top-0 left-0 right-0 z-50 transition-colors duration-500 ${
           isScrolled
-            ? 'bg-zinc-950/95 backdrop-blur-md shadow-2xl border-b border-white/5'
-            : 'bg-gradient-to-b from-black/80 via-black/30 to-transparent'
+            ? "bg-zinc-950/95 backdrop-blur-md shadow-2xl border-b border-white/5"
+            : "bg-gradient-to-b from-black/80 via-black/30 to-transparent"
         }`}
       >
         <div className="max-w-[98%] mx-auto px-2 xl:px-4 py-2 xl:py-3 flex flex-col xl:flex-row items-center gap-3 xl:gap-2 2xl:gap-5 justify-between">
@@ -1152,6 +671,7 @@ export default function Home() {
                     if (!handleNavigationAttempt()) return;
                     setIsMobileMenuOpen(true);
                   }}
+                  aria-label="Mở menu điều hướng di động"
                 >
                   <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -1177,7 +697,14 @@ export default function Home() {
                 type="search"
                 placeholder="Tìm kiếm phim, diễn viên..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSearchQuery(val);
+                  if (!val.trim()) {
+                    setSearchResults([]);
+                    setShowDropdown(false);
+                  }
+                }}
                 onFocus={() => {
                   if (searchResults.length > 0) setShowDropdown(true);
                 }}
@@ -1202,8 +729,8 @@ export default function Home() {
                       }}
                       className="cursor-pointer flex items-center gap-3 p-2 hover:bg-zinc-800 rounded-xl transition-colors"
                     >
-                      <img
-                        src={getImage(m.thumb_url || m.poster_url)}
+                      <MovieImage
+                        src={m.thumb_url || m.poster_url}
                         alt={m.name}
                         className="w-10 h-14 object-cover rounded-lg shrink-0"
                       />
@@ -1226,7 +753,7 @@ export default function Home() {
                 handleGenreChange(genresMap[0]);
               }}
               className={`cursor-pointer hover:text-white transition-colors ${
-                currentGenre.slug === genresMap[0].slug ? 'text-white' : ''
+                currentGenre.slug === genresMap[0].slug ? "text-white" : ""
               }`}
             >
               Trang Chủ
@@ -1239,7 +766,7 @@ export default function Home() {
                   handleGenreChange(g);
                 }}
                 className={`cursor-pointer hover:text-white transition-colors ${
-                  currentGenre.slug === g.slug ? 'text-orange-500' : ''
+                  currentGenre.slug === g.slug ? "text-orange-500" : ""
                 }`}
               >
                 {g.name}
@@ -1248,7 +775,7 @@ export default function Home() {
             <div className="relative group py-2">
               <button
                 className={`cursor-pointer transition-colors flex items-center gap-1 ${
-                  currentGenre.type === 'quoc-gia' ? 'text-orange-500' : 'hover:text-white'
+                  currentGenre.type === "quoc-gia" ? "text-orange-500" : "hover:text-white"
                 }`}
               >
                 Quốc gia
@@ -1265,7 +792,7 @@ export default function Home() {
                       handleGenreChange({ name: c.name, slug: c.slug, type: "quoc-gia" });
                     }}
                     className={`cursor-pointer text-left px-3 py-2 rounded-lg text-xs font-semibold hover:bg-zinc-800 transition-colors ${
-                      currentGenre.slug === c.slug ? 'text-orange-500' : 'text-zinc-300 hover:text-white'
+                      currentGenre.slug === c.slug ? "text-orange-500" : "text-zinc-300 hover:text-white"
                     }`}
                   >
                     {c.name}
@@ -1277,7 +804,7 @@ export default function Home() {
 
           {/* User Auth & Actions Section (Desktop) */}
           <div className="hidden xl:flex items-center gap-1.5 2xl:gap-2 shrink min-w-0">
-            {/* Nút Góp Ý (Tính năng 2) */}
+            {/* Nút Góp Ý */}
             <button
               onClick={() => {
                 setFeedbackMovieContext(
@@ -1285,7 +812,7 @@ export default function Home() {
                     ? {
                         name: selectedMovie.name,
                         episode: currentEpisode?.name,
-                        url: typeof window !== 'undefined' ? window.location.href : '',
+                        url: typeof window !== "undefined" ? window.location.href : "",
                       }
                     : null
                 );
@@ -1331,9 +858,9 @@ export default function Home() {
                   )}
                   <span
                     className="text-zinc-900 font-bold text-[10px] xl:text-[11px] 2xl:text-xs truncate block min-w-0 max-w-[70px] xl:max-w-[90px] 2xl:max-w-[120px]"
-                    title={userProfile?.username || user?.email?.split('@')[0]}
+                    title={userProfile?.username || user?.email?.split("@")[0]}
                   >
-                    {userProfile?.username || user?.email?.split('@')[0]}
+                    {userProfile?.username || user?.email?.split("@")[0]}
                   </span>
                 </div>
 
@@ -1384,9 +911,9 @@ export default function Home() {
                     )}
                     <span
                       className="text-zinc-900 font-bold text-[15px] truncate block min-w-0"
-                      title={userProfile?.username || user?.email?.split('@')[0]}
+                      title={userProfile?.username || user?.email?.split("@")[0]}
                     >
-                      {userProfile?.username || user?.email?.split('@')[0]}
+                      {userProfile?.username || user?.email?.split("@")[0]}
                     </span>
                   </div>
                   <button
@@ -1427,15 +954,15 @@ export default function Home() {
                 {/* Thể loại */}
                 <div className="flex flex-col col-span-1">
                   <button
-                    onClick={() => setMobileExpandedSection((prev) => (prev === 'the-loai' ? null : 'the-loai'))}
+                    onClick={() => setMobileExpandedSection((prev) => (prev === "the-loai" ? null : "the-loai"))}
                     className="text-left hover:text-orange-400 cursor-pointer transition-colors flex items-center justify-between"
                   >
                     Thể loại
-                    <svg className={`w-4 h-4 transition-transform duration-200 ${mobileExpandedSection === 'the-loai' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className={`w-4 h-4 transition-transform duration-200 ${mobileExpandedSection === "the-loai" ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
-                  {mobileExpandedSection === 'the-loai' && (
+                  {mobileExpandedSection === "the-loai" && (
                     <div className="mt-4 flex flex-col gap-4 pl-2 border-l border-white/10 max-h-48 overflow-y-auto custom-scrollbar">
                       {genresMap.slice(1).map((g) => (
                         <button
@@ -1445,7 +972,7 @@ export default function Home() {
                             setIsMobileMenuOpen(false);
                           }}
                           className={`cursor-pointer text-left text-xs font-semibold hover:text-white ${
-                            currentGenre.slug === g.slug ? 'text-orange-400' : 'text-zinc-300'
+                            currentGenre.slug === g.slug ? "text-orange-400" : "text-zinc-300"
                           }`}
                         >
                           {g.name}
@@ -1493,15 +1020,15 @@ export default function Home() {
                 {/* Quốc gia */}
                 <div className="flex flex-col col-span-1">
                   <button
-                    onClick={() => setMobileExpandedSection((prev) => (prev === 'quoc-gia' ? null : 'quoc-gia'))}
+                    onClick={() => setMobileExpandedSection((prev) => (prev === "quoc-gia" ? null : "quoc-gia"))}
                     className="text-left hover:text-orange-400 cursor-pointer transition-colors flex items-center justify-between"
                   >
                     Quốc gia
-                    <svg className={`w-4 h-4 transition-transform duration-200 ${mobileExpandedSection === 'quoc-gia' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className={`w-4 h-4 transition-transform duration-200 ${mobileExpandedSection === "quoc-gia" ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
-                  {mobileExpandedSection === 'quoc-gia' && (
+                  {mobileExpandedSection === "quoc-gia" && (
                     <div className="mt-4 flex flex-col gap-4 pl-2 border-l border-white/10 max-h-48 overflow-y-auto custom-scrollbar">
                       {countries.map((c) => (
                         <button
@@ -1511,7 +1038,7 @@ export default function Home() {
                             setIsMobileMenuOpen(false);
                           }}
                           className={`cursor-pointer text-left text-xs font-semibold hover:text-white ${
-                            currentGenre.slug === c.slug ? 'text-orange-400' : 'text-zinc-300'
+                            currentGenre.slug === c.slug ? "text-orange-400" : "text-zinc-300"
                           }`}
                         >
                           {c.name}
@@ -1527,7 +1054,7 @@ export default function Home() {
       </header>
 
       {currentRoom ? (
-        <WatchRoomView room={currentRoom} user={user!} onLeave={() => setCurrentRoom(null)} />
+        <DynamicWatchRoomView room={currentRoom} user={user!} onLeave={() => setCurrentRoom(null)} />
       ) : selectedMovie ? (
         /* ---------------------------------
            DETAIL VIEW (TRANG XEM CHI TIẾT & PLAYER)
@@ -1545,7 +1072,7 @@ export default function Home() {
             {playing && currentEpisode ? (
               <div className="w-full h-full bg-black rounded-2xl">
                 {currentEpisode.link_m3u8 ? (
-                  <HlsPlayer
+                  <DynamicHlsPlayer
                     src={currentEpisode.link_m3u8}
                     movie={selectedMovie}
                     episode={currentEpisode}
@@ -1564,8 +1091,8 @@ export default function Home() {
               </div>
             ) : (
               <>
-                <img
-                  src={getImage(selectedMovie.poster_url || selectedMovie.thumb_url)}
+                <MovieImage
+                  src={selectedMovie.poster_url || selectedMovie.thumb_url}
                   className="absolute inset-0 w-full h-full object-cover opacity-50 blur-sm scale-105"
                   alt="Cover"
                 />
@@ -1573,6 +1100,7 @@ export default function Home() {
                   <button
                     onClick={playFirstEpisode}
                     className="cursor-pointer w-20 h-20 bg-orange-500 rounded-full flex items-center justify-center text-white hover:scale-110 transition-transform shadow-[0_0_30px_rgba(245,158,11,0.4)]"
+                    aria-label="Bắt đầu xem phim"
                   >
                     <svg className="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M8 5v14l11-7z" />
@@ -1651,11 +1179,11 @@ export default function Home() {
                       onClick={playFirstEpisode}
                       className={`cursor-pointer px-8 py-3 rounded-xl font-semibold transition-colors shadow-lg flex items-center gap-2 ${
                         movieProgress && movieProgress.progress_seconds > 10 && !movieProgress.completed
-                          ? 'bg-zinc-900 border border-white/10 text-zinc-100 hover:bg-zinc-800'
-                          : 'bg-orange-500 text-white hover:bg-orange-600 shadow-orange-500/20'
+                          ? "bg-zinc-900 border border-white/10 text-zinc-100 hover:bg-zinc-800"
+                          : "bg-orange-500 text-white hover:bg-orange-600 shadow-orange-500/20"
                       }`}
                     >
-                      {playing ? 'Đang phát' : 'Xem từ đầu'}
+                      {playing ? "Đang phát" : "Xem từ đầu"}
                     </button>
 
                     {/* Nút Báo Lỗi / Góp Ý gắn liền với phim này */}
@@ -1664,7 +1192,7 @@ export default function Home() {
                         setFeedbackMovieContext({
                           name: selectedMovie.name,
                           episode: currentEpisode ? currentEpisode.name : undefined,
-                          url: typeof window !== 'undefined' ? window.location.href : '',
+                          url: typeof window !== "undefined" ? window.location.href : "",
                         });
                         setIsFeedbackOpen(true);
                       }}
@@ -1689,14 +1217,14 @@ export default function Home() {
                             const room = await createWatchRoom(user.id, selectedMovie);
                             setCurrentRoom(room);
                           } catch (e: unknown) {
-                            alert(e instanceof Error ? e.message : 'Lỗi tạo phòng!');
+                            alert(e instanceof Error ? e.message : "Lỗi tạo phòng!");
                           }
                           setIsCreatingRoom(false);
                         }}
                         disabled={isCreatingRoom}
                         className="cursor-pointer px-8 py-3 bg-gradient-to-r from-orange-500 to-pink-500 text-white font-semibold rounded-xl hover:scale-105 transition-all shadow-lg shadow-pink-500/20 flex items-center gap-2 disabled:opacity-50"
                       >
-                        {isCreatingRoom ? 'Đang tạo phòng...' : 'Xem cùng nhau'}
+                        {isCreatingRoom ? "Đang tạo phòng..." : "Xem cùng nhau"}
                       </button>
                     )}
                   </div>
@@ -1720,8 +1248,8 @@ export default function Home() {
                                   onClick={() => setEpisodeChunk(idx)}
                                   className={`cursor-pointer px-4 py-1.5 rounded-md text-sm font-semibold transition-colors whitespace-nowrap ${
                                     episodeChunk === idx
-                                      ? 'bg-orange-500 text-white shadow-md'
-                                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                                      ? "bg-orange-500 text-white shadow-md"
+                                      : "text-zinc-400 hover:text-white hover:bg-zinc-800"
                                   }`}
                                 >
                                   {idx * CHUNK_SIZE + 1} - {Math.min((idx + 1) * CHUNK_SIZE, allEpisodes.length)}
@@ -1746,14 +1274,14 @@ export default function Home() {
                                 onClick={() => playEpisode(ep)}
                                 className={`cursor-pointer px-5 py-2.5 rounded-xl font-semibold border transition-all flex items-center gap-2 ${
                                   currentEpisode?.name === ep.name
-                                    ? 'bg-orange-500 text-white border-orange-500 shadow-md'
+                                    ? "bg-orange-500 text-white border-orange-500 shadow-md"
                                     : isWatchingThis
-                                    ? 'bg-orange-500/15 text-orange-300 border-orange-500/40 hover:bg-orange-500/25'
-                                    : 'bg-zinc-900 text-zinc-300 border-white/10 hover:bg-zinc-800'
+                                    ? "bg-orange-500/15 text-orange-300 border-orange-500/40 hover:bg-orange-500/25"
+                                    : "bg-zinc-900 text-zinc-300 border-white/10 hover:bg-zinc-800"
                                 }`}
                               >
                                 <span>
-                                  {ep.name.toLowerCase().startsWith('tập') || ep.name.toLowerCase().startsWith('tap')
+                                  {ep.name.toLowerCase().startsWith("tập") || ep.name.toLowerCase().startsWith("tap")
                                     ? ep.name
                                     : `Tập ${ep.name}`}
                                 </span>
@@ -1776,7 +1304,7 @@ export default function Home() {
                     <h3 className="text-xl font-bold text-white mb-4">Nội dung</h3>
                     <p
                       className="text-zinc-400 leading-relaxed text-lg bg-zinc-900/50 p-6 rounded-2xl border border-white/5"
-                      dangerouslySetInnerHTML={{ __html: movieDetail?.content || 'Đang cập nhật' }}
+                      dangerouslySetInnerHTML={{ __html: movieDetail?.content || "Đang cập nhật" }}
                     ></p>
                   </div>
 
@@ -1790,12 +1318,12 @@ export default function Home() {
                           if (!name) return null;
                           const initials = name.substring(0, 2).toUpperCase();
                           const colors = [
-                            'bg-indigo-500',
-                            'bg-purple-500',
-                            'bg-pink-500',
-                            'bg-rose-500',
-                            'bg-orange-500',
-                            'bg-green-500',
+                            "bg-indigo-500",
+                            "bg-purple-500",
+                            "bg-pink-500",
+                            "bg-rose-500",
+                            "bg-orange-500",
+                            "bg-green-500",
                           ];
                           const colorClass = colors[name.charCodeAt(0) % colors.length];
 
@@ -1822,7 +1350,7 @@ export default function Home() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-8 text-zinc-300">
                       <div className="grid grid-cols-[100px_1fr] gap-4">
                         <span className="text-zinc-500">Đạo diễn</span>
-                        <span className="font-medium text-white">{movieDetail?.director?.join(', ') || "Đang cập nhật"}</span>
+                        <span className="font-medium text-white">{movieDetail?.director?.join(", ") || "Đang cập nhật"}</span>
                       </div>
                       <div className="grid grid-cols-[100px_1fr] gap-4">
                         <span className="text-zinc-500">Năm p.hành</span>
@@ -1830,11 +1358,11 @@ export default function Home() {
                       </div>
                       <div className="grid grid-cols-[100px_1fr] gap-4">
                         <span className="text-zinc-500">Thời lượng</span>
-                        <span className="font-medium text-white">{movieDetail?.time || selectedMovie.time || 'Đang cập nhật'}</span>
+                        <span className="font-medium text-white">{movieDetail?.time || selectedMovie.time || "Đang cập nhật"}</span>
                       </div>
                       <div className="grid grid-cols-[100px_1fr] gap-4">
                         <span className="text-zinc-500">Thể loại</span>
-                        <span className="font-medium text-white">{movieDetail?.category?.map((c) => c.name).join(', ') || "Đang cập nhật"}</span>
+                        <span className="font-medium text-white">{movieDetail?.category?.map((c) => c.name).join(", ") || "Đang cập nhật"}</span>
                       </div>
                     </div>
                   </div>
@@ -1855,8 +1383,8 @@ export default function Home() {
                       onClick={() => handleSelectMovie(movie)}
                       className="cursor-pointer flex gap-4 p-3 rounded-2xl bg-zinc-900 border border-white/5 hover:border-orange-500/30 transition-all group"
                     >
-                      <img
-                        src={getImage(movie.thumb_url || movie.poster_url)}
+                      <MovieImage
+                        src={movie.thumb_url || movie.poster_url}
                         alt={movie.name}
                         className="w-16 h-24 object-cover rounded-xl shrink-0 group-hover:scale-105 transition-transform"
                       />
@@ -1895,11 +1423,12 @@ export default function Home() {
           ) : (
             <>
               {/* Full Bleed Hero Section */}
-              {featuredMovie && (
+              {activeHeroMovie && (
                 <section className="relative w-full h-[75vh] md:h-[85vh] lg:h-screen overflow-hidden group bg-zinc-950">
-                  <img
-                    src={getImage(featuredMovie.thumb_url || featuredMovie.poster_url)}
-                    alt={featuredMovie.name}
+                  <MovieImage
+                    src={activeHeroMovie.thumb_url || activeHeroMovie.poster_url}
+                    alt={activeHeroMovie.name}
+                    priority={true}
                     className="absolute inset-0 w-full h-full object-cover transition-transform duration-[15s] group-hover:scale-105 opacity-90"
                   />
 
@@ -1908,49 +1437,54 @@ export default function Home() {
 
                   <div className="absolute inset-0 flex flex-col justify-end md:justify-center px-6 md:px-16 w-full md:w-3/4 lg:w-1/2 z-10 pt-[140px] md:pt-20 pb-[120px] md:pb-0">
                     <h1 className="text-4xl md:text-5xl lg:text-7xl font-extrabold tracking-tight mb-8 text-white drop-shadow-2xl leading-tight max-w-4xl">
-                      {featuredMovie.name}
+                      {activeHeroMovie.name}
                     </h1>
 
                     <div className="flex flex-wrap items-center gap-2.5 mb-10 text-xs md:text-sm font-bold uppercase tracking-wider">
                       <span className="px-3 py-1.5 rounded-md bg-orange-500 text-white shadow-lg shadow-orange-500/30">
-                        ★ {getScore(featuredMovie.slug)}
+                        ★ {getScore(activeHeroMovie.slug)}
                       </span>
-                      {featuredMovie.quality && (
+                      {activeHeroMovie.quality && (
                         <span className="px-3 py-1.5 rounded-md bg-white/15 backdrop-blur-md text-white drop-shadow-sm">
-                          {featuredMovie.quality}
+                          {activeHeroMovie.quality}
                         </span>
                       )}
-                      {featuredMovie.lang && (
+                      {activeHeroMovie.lang && (
                         <span className="px-3 py-1.5 rounded-md bg-white/15 backdrop-blur-md text-white drop-shadow-sm">
-                          {featuredMovie.lang}
+                          {activeHeroMovie.lang}
                         </span>
                       )}
-                      {featuredMovie.year && (
+                      {activeHeroMovie.year && (
                         <span className="px-3 py-1.5 rounded-md bg-white/15 backdrop-blur-md text-zinc-100 drop-shadow-sm">
-                          Năm {featuredMovie.year}
+                          Năm {activeHeroMovie.year}
                         </span>
                       )}
                     </div>
 
                     <div className="flex items-center gap-4 md:gap-5">
                       <button
-                        onClick={() => handleSelectMovie(featuredMovie)}
+                        onClick={() => handleSelectMovie(activeHeroMovie)}
                         className="cursor-pointer w-16 h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-tr from-yellow-500 to-yellow-300 hover:scale-105 text-zinc-950 flex items-center justify-center transition-all shadow-[0_8px_30px_rgba(234,179,8,0.4)]"
+                        aria-label="Phát phim tiêu điểm"
                       >
                         <svg className="w-7 h-7 md:w-9 md:h-9 ml-1.5" fill="currentColor" viewBox="0 0 24 24">
                           <path d="M7 4v16l14-8z" />
                         </svg>
                       </button>
 
-                      <button className="cursor-pointer w-12 h-12 md:w-14 md:h-14 rounded-full bg-zinc-800/60 backdrop-blur-xl hover:bg-zinc-700/80 text-white flex items-center justify-center transition-colors shadow-lg">
+                      <button
+                        className="cursor-pointer w-12 h-12 md:w-14 md:h-14 rounded-full bg-zinc-800/60 backdrop-blur-xl hover:bg-zinc-700/80 text-white flex items-center justify-center transition-colors shadow-lg"
+                        aria-label="Thêm vào yêu thích"
+                      >
                         <svg className="w-5 h-5 md:w-6 md:h-6" fill="currentColor" viewBox="0 0 24 24">
                           <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
                         </svg>
                       </button>
 
                       <button
-                        onClick={() => handleSelectMovie(featuredMovie)}
+                        onClick={() => handleSelectMovie(activeHeroMovie)}
                         className="cursor-pointer w-12 h-12 md:w-14 md:h-14 rounded-full bg-zinc-800/60 backdrop-blur-xl hover:bg-zinc-700/80 text-white flex items-center justify-center transition-colors shadow-lg"
+                        aria-label="Xem chi tiết phim"
                       >
                         <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1965,12 +1499,16 @@ export default function Home() {
                         key={m.slug}
                         onClick={() => setFeaturedMovie(m)}
                         className={`w-28 h-16 md:w-40 md:h-24 flex-shrink-0 rounded-lg overflow-hidden cursor-pointer transition-all duration-300 border-2 ${
-                          featuredMovie.slug === m.slug
-                            ? 'border-white scale-110 shadow-xl z-10'
-                            : 'border-transparent opacity-50 hover:opacity-100 hover:scale-105'
+                          activeHeroMovie.slug === m.slug
+                            ? "border-white scale-110 shadow-xl z-10"
+                            : "border-transparent opacity-50 hover:opacity-100 hover:scale-105"
                         }`}
                       >
-                        <img src={getImage(m.thumb_url || m.poster_url)} className="w-full h-full object-cover" alt={m.name} />
+                        <MovieImage
+                          src={m.thumb_url || m.poster_url}
+                          className="w-full h-full object-cover"
+                          alt={m.name}
+                        />
                       </div>
                     ))}
                   </div>
@@ -1988,7 +1526,7 @@ export default function Home() {
                       </span>
                     </h2>
                   </div>
-                  <div className="flex overflow-x-auto gap-4 snap-x custom-scrollbar pb-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+                  <div className="flex overflow-x-auto gap-4 snap-x custom-scrollbar pb-4" style={{ WebkitOverflowScrolling: "touch" }}>
                     {continueWatching.map((item) => {
                       const percent =
                         item.duration_seconds > 0
@@ -2003,8 +1541,8 @@ export default function Home() {
                             className="relative aspect-video w-full bg-zinc-950 overflow-hidden cursor-pointer"
                             onClick={() => handleResumeFromContinueWatching(item)}
                           >
-                            <img
-                              src={getImage(item.movie_poster || '')}
+                            <MovieImage
+                              src={item.movie_poster || ""}
                               alt={item.movie_name}
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             />
@@ -2017,7 +1555,7 @@ export default function Home() {
                             </div>
 
                             <span className="absolute top-2 left-2 bg-black/70 backdrop-blur-md border border-white/10 text-white text-[11px] font-bold px-2 py-0.5 rounded-md">
-                              {item.episode_name.toLowerCase().startsWith('tập') ? item.episode_name : `Tập ${item.episode_name}`}
+                              {item.episode_name.toLowerCase().startsWith("tập") ? item.episode_name : `Tập ${item.episode_name}`}
                             </span>
 
                             <button
@@ -2083,6 +1621,7 @@ export default function Home() {
                         value={currentSort}
                         onChange={(e) => setCurrentSort(e.target.value)}
                         className="bg-zinc-900 border border-white/10 text-zinc-300 text-xs sm:text-sm rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-orange-500"
+                        aria-label="Sắp xếp phim"
                       >
                         <option value="rating">Điểm cao nhất</option>
                         <option value="newest">Phim mới nhất</option>
@@ -2104,7 +1643,7 @@ export default function Home() {
                         <button
                           onClick={() => {
                             setCurrentPage((prev) => Math.max(1, prev - 1));
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                            window.scrollTo({ top: 0, behavior: "smooth" });
                           }}
                           disabled={currentPage === 1}
                           className="cursor-pointer shrink-0 px-2 sm:px-4 py-2 min-w-[36px] min-h-[36px] sm:min-h-[40px] rounded-xl bg-zinc-800 text-zinc-300 font-semibold hover:bg-zinc-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-1 sm:gap-2"
@@ -2130,7 +1669,7 @@ export default function Home() {
                                   key={1}
                                   onClick={() => {
                                     setCurrentPage(1);
-                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    window.scrollTo({ top: 0, behavior: "smooth" });
                                   }}
                                   className="shrink-0 cursor-pointer w-8 h-8 sm:w-10 sm:h-10 text-xs sm:text-base rounded-xl font-bold flex items-center justify-center transition-all bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700 hover:text-white"
                                 >
@@ -2146,12 +1685,12 @@ export default function Home() {
                                   key={i}
                                   onClick={() => {
                                     setCurrentPage(i);
-                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    window.scrollTo({ top: 0, behavior: "smooth" });
                                   }}
                                   className={`shrink-0 cursor-pointer w-8 h-8 sm:w-10 sm:h-10 text-xs sm:text-base rounded-xl font-bold flex items-center justify-center transition-all ${
                                     currentPage === i
-                                      ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20'
-                                      : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+                                      ? "bg-orange-500 text-white shadow-lg shadow-orange-500/20"
+                                      : "bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700 hover:text-white"
                                   }`}
                                 >
                                   {i}
@@ -2166,7 +1705,7 @@ export default function Home() {
                                   key={totalPages}
                                   onClick={() => {
                                     setCurrentPage(totalPages);
-                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    window.scrollTo({ top: 0, behavior: "smooth" });
                                   }}
                                   className="shrink-0 cursor-pointer w-8 h-8 sm:w-10 sm:h-10 text-xs sm:text-base rounded-xl font-bold flex items-center justify-center transition-all bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700 hover:text-white"
                                 >
@@ -2181,7 +1720,7 @@ export default function Home() {
                         <button
                           onClick={() => {
                             setCurrentPage((prev) => Math.min(totalPages, prev + 1));
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                            window.scrollTo({ top: 0, behavior: "smooth" });
                           }}
                           disabled={currentPage === totalPages}
                           className="cursor-pointer shrink-0 px-2 sm:px-4 py-2 min-w-[36px] min-h-[36px] sm:min-h-[40px] rounded-xl bg-zinc-800 text-zinc-300 font-semibold hover:bg-zinc-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-1 sm:gap-2"
@@ -2303,25 +1842,29 @@ export default function Home() {
         </div>
       )}
 
-      {/* Modals */}
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        onAuthSuccess={() => {
-          setIsAuthModalOpen(false);
-          refreshContinueWatching();
-        }}
-      />
+      {/* Modals - chỉ render dynamic khi modal được mở */}
+      {isAuthModalOpen && (
+        <DynamicAuthModal
+          isOpen={isAuthModalOpen}
+          onClose={() => setIsAuthModalOpen(false)}
+          onAuthSuccess={() => {
+            setIsAuthModalOpen(false);
+            refreshContinueWatching();
+          }}
+        />
+      )}
 
-      <FeedbackModal
-        isOpen={isFeedbackOpen}
-        onClose={() => setIsFeedbackOpen(false)}
-        user={user}
-        movieContext={feedbackMovieContext}
-      />
+      {isFeedbackOpen && (
+        <DynamicFeedbackModal
+          isOpen={isFeedbackOpen}
+          onClose={() => setIsFeedbackOpen(false)}
+          user={user}
+          movieContext={feedbackMovieContext}
+        />
+      )}
 
-      {user && (
-        <JoinRoomModal
+      {isJoinRoomOpen && user && (
+        <DynamicJoinRoomModal
           isOpen={isJoinRoomOpen}
           onClose={() => setIsJoinRoomOpen(false)}
           userId={user.id}

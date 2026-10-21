@@ -50,8 +50,18 @@ const SyncHlsPlayer = ({ src, room, isHost, supabase }: { src: string, room: Roo
     const video = videoRef.current;
     if (!video || !src) return;
 
+    let nativeListener: (() => void) | null = null;
+
     if (Hls.isSupported()) {
-      const hls = new Hls({ maxMaxBufferLength: 100 });
+      const hls = new Hls({
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        maxBufferSize: 30 * 1024 * 1024,
+        backBufferLength: 30,
+        capLevelToPlayerSize: true,
+        enableWorker: true,
+        lowLatencyMode: false,
+      });
       hlsRef.current = hls;
       
       hls.loadSource(src);
@@ -61,7 +71,7 @@ const SyncHlsPlayer = ({ src, room, isHost, supabase }: { src: string, room: Roo
         
         const savedQuality = localStorage.getItem('preferred_quality');
         if (savedQuality && savedQuality !== 'auto') {
-          const targetHeight = parseInt(savedQuality);
+          const targetHeight = parseInt(savedQuality, 10);
           const index = data.levels.findIndex((l: { height: number }) => l.height === targetHeight);
           if (index !== -1) {
             hls.currentLevel = index;
@@ -71,13 +81,39 @@ const SyncHlsPlayer = ({ src, room, isHost, supabase }: { src: string, room: Roo
         
         if (isHost) video.play().catch(e => console.log("Play failed", e));
       });
+
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              hls.recoverMediaError();
+              break;
+            default:
+              hls.destroy();
+              break;
+          }
+        }
+      });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src;
-      video.addEventListener('loadedmetadata', () => {
+      nativeListener = () => {
         if (isHost) video.play().catch(e => console.log("Play failed", e));
-      });
+      };
+      video.addEventListener('loadedmetadata', nativeListener);
     }
-    return () => { if (hlsRef.current) hlsRef.current.destroy(); };
+
+    return () => {
+      if (nativeListener && video) {
+        video.removeEventListener('loadedmetadata', nativeListener);
+      }
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
   }, [src, isHost]);
 
   useEffect(() => {

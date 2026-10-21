@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+.github
+*.log
+.env*.local
+output.css
+test*.css
+test*.json
+parasite.json
+README.md
