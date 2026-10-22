@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useScrollLock } from '@/hooks/useScrollLock';
 
 type AuthModalProps = {
   isOpen: boolean;
@@ -8,6 +9,7 @@ type AuthModalProps = {
 };
 
 export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
+  useScrollLock(isOpen);
   const translateAuthError = (message: string) => {
     if (message.includes('security purposes, you can only request this after')) {
       const seconds = message.match(/\d+/)?.[0] || '60';
@@ -104,9 +106,15 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="bg-zinc-900 border border-white/10 rounded-2xl w-full max-w-md p-6 sm:p-8 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
-        <button onClick={onClose} className="cursor-pointer absolute top-4 right-4 text-zinc-400 hover:text-white">
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+      <div className="bg-zinc-900 border border-white/10 rounded-2xl w-full max-w-md p-6 sm:p-8 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto custom-scrollbar">
+        <button
+          onClick={onClose}
+          className="cursor-pointer absolute top-3.5 right-3.5 w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition-colors touch-target"
+          aria-label="Đóng"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
         </button>
         
         <h2 className="text-2xl font-bold text-white mb-6 text-center">

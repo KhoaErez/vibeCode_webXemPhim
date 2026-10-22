@@ -427,9 +427,9 @@ export default function HlsPlayer({
                     }
                     setResumePrompt(null);
                   }}
-                  className="cursor-pointer px-4 py-1.5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-lg transition-all shadow-md shadow-orange-500/20 flex items-center gap-1.5"
+                  className="cursor-pointer min-h-[44px] px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-orange-500/20 flex items-center gap-1.5 touch-target"
                 >
-                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M8 5v14l11-7z" />
                   </svg>
                   Tiếp tục xem
@@ -442,7 +442,7 @@ export default function HlsPlayer({
                     }
                     setResumePrompt(null);
                   }}
-                  className="cursor-pointer px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white font-semibold text-xs rounded-lg transition-colors border border-white/5"
+                  className="cursor-pointer min-h-[44px] px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white font-semibold text-xs rounded-xl transition-colors border border-white/5 touch-target"
                 >
                   Xem lại từ đầu
                 </button>
@@ -451,10 +451,10 @@ export default function HlsPlayer({
             <button
               type="button"
               onClick={() => setResumePrompt(null)}
-              className="cursor-pointer text-zinc-500 hover:text-white p-1"
+              className="cursor-pointer text-zinc-500 hover:text-white p-2 min-w-[40px] min-h-[40px] flex items-center justify-center touch-target"
               title="Đóng thông báo"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
@@ -474,14 +474,14 @@ export default function HlsPlayer({
               setNextCountdown(null);
               onNextEpisode();
             }}
-            className="cursor-pointer px-3 py-1 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-lg shadow-md"
+            className="cursor-pointer min-h-[40px] px-3.5 py-1.5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-md touch-target flex items-center"
           >
             Chuyển ngay
           </button>
           <button
             type="button"
             onClick={() => setNextCountdown(null)}
-            className="cursor-pointer text-zinc-400 hover:text-white text-xs"
+            className="cursor-pointer min-h-[40px] text-zinc-400 hover:text-white text-xs px-2 touch-target flex items-center"
           >
             Hủy
           </button>
@@ -492,7 +492,7 @@ export default function HlsPlayer({
       <div className="absolute top-4 right-4 z-50">
         <button
           onClick={() => setShowSettings(!showSettings)}
-          className={`cursor-pointer w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur text-white flex items-center justify-center transition-all md:opacity-0 md:group-hover:opacity-100 ${
+          className={`cursor-pointer w-11 h-11 min-w-[44px] min-h-[44px] rounded-full bg-black/60 hover:bg-black/80 backdrop-blur text-white flex items-center justify-center transition-all touch-target md:opacity-0 md:group-hover:opacity-100 ${
             isUIActive || showSettings ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
           title="Cài đặt phát"
@@ -504,15 +504,15 @@ export default function HlsPlayer({
         </button>
 
         {showSettings && (
-          <div className="absolute top-12 right-0 bg-black/90 backdrop-blur-md rounded-xl p-3 border border-white/10 w-56 animate-in fade-in zoom-in-95 shadow-2xl">
+          <div className="absolute top-12 right-0 bg-black/92 backdrop-blur-md rounded-2xl p-3 border border-white/10 w-64 max-w-[calc(100vw-32px)] animate-in fade-in zoom-in-95 shadow-2xl">
             {levels.length > 0 && (
               <div className="mb-3">
                 <div className="text-[10px] font-bold text-zinc-400 mb-2 uppercase tracking-wider">Chất lượng</div>
                 <div className="grid grid-cols-3 gap-1.5">
                   <button
                     onClick={() => handleQualityChange(-1)}
-                    className={`cursor-pointer px-2 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                      currentLevel === -1 ? 'bg-orange-500 text-white' : 'bg-white/5 text-zinc-300 hover:bg-white/10'
+                    className={`cursor-pointer min-h-[38px] px-2 py-2 rounded-xl text-xs font-bold transition-colors touch-target ${
+                      currentLevel === -1 ? 'bg-orange-500 text-white shadow-md' : 'bg-white/5 text-zinc-300 hover:bg-white/10'
                     }`}
                   >
                     Auto
@@ -529,8 +529,8 @@ export default function HlsPlayer({
                       <button
                         key={originalIndex}
                         onClick={() => handleQualityChange(originalIndex, level.height)}
-                        className={`cursor-pointer px-2 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                          currentLevel === originalIndex ? 'bg-orange-500 text-white' : 'bg-white/5 text-zinc-300 hover:bg-white/10'
+                        className={`cursor-pointer min-h-[38px] px-2 py-2 rounded-xl text-xs font-bold transition-colors touch-target ${
+                          currentLevel === originalIndex ? 'bg-orange-500 text-white shadow-md' : 'bg-white/5 text-zinc-300 hover:bg-white/10'
                         }`}
                       >
                         {getQualityLabel(level)}
@@ -548,8 +548,8 @@ export default function HlsPlayer({
                   <button
                     key={`speed-${rate}`}
                     onClick={() => handleSpeedChange(rate)}
-                    className={`cursor-pointer px-2 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                      playbackRate === rate ? 'bg-orange-500 text-white' : 'bg-white/5 text-zinc-300 hover:bg-white/10'
+                    className={`cursor-pointer min-h-[38px] px-2 py-2 rounded-xl text-xs font-bold transition-colors touch-target ${
+                      playbackRate === rate ? 'bg-orange-500 text-white shadow-md' : 'bg-white/5 text-zinc-300 hover:bg-white/10'
                     }`}
                   >
                     {rate}x

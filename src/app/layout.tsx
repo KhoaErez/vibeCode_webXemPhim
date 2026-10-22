@@ -1,12 +1,21 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import SitePresenceTracker from "@/components/SitePresenceTracker";
 
 const inter = Inter({
   variable: "--font-body",
   subsets: ["vietnamese", "latin"],
   weight: ["300", "400", "500", "600", "700", "800", "900"],
 });
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+  themeColor: "#09090b",
+};
 
 export const metadata: Metadata = {
   title: "Rạp Nhà | Xem phim cực đã",
@@ -26,6 +35,7 @@ export default function RootLayout({
       <body
         className={`${inter.className} antialiased flex flex-col min-h-screen`}
       >
+        <SitePresenceTracker />
         {children}
       </body>
     </html>

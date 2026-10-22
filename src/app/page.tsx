@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import MovieImage from "@/components/MovieImage";
+import MobileBottomNav from "@/components/MobileBottomNav";
+import { useScrollLock } from "@/hooks/useScrollLock";
 import { fetchWithCache } from "@/lib/apiCache";
 import { createWatchRoom } from "@/lib/room";
 import { createClient } from "@/lib/supabase/client";
@@ -86,9 +88,9 @@ const MovieCard = React.memo(
   }) => (
     <button
       onClick={() => onSelectMovie(movie)}
-      className={`text-left group outline-none cursor-pointer flex flex-col ${className}`}
+      className={`text-left group outline-none cursor-pointer flex flex-col touch-target ${className}`}
     >
-      <div className="aspect-poster w-full rounded-xl mb-3 relative overflow-hidden flex flex-col justify-end shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl group-focus-visible:ring-2 ring-orange-500/50 bg-zinc-900 border border-white/5">
+      <div className="aspect-poster w-full rounded-xl mb-2 sm:mb-3 relative overflow-hidden flex flex-col justify-end shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl group-focus-visible:ring-2 ring-orange-500/50 bg-zinc-900 border border-white/5">
         <MovieImage
           src={movie.thumb_url || movie.poster_url}
           alt={movie.name}
@@ -96,30 +98,30 @@ const MovieCard = React.memo(
         />
         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/90 via-transparent to-transparent opacity-80 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
 
-        <div className="absolute top-2 left-2 bg-zinc-950/80 backdrop-blur-sm text-orange-500 border border-orange-500/30 text-[10px] font-medium px-1.5 py-0.5 rounded flex items-center gap-1 z-20">
+        <div className="absolute top-1.5 sm:top-2 left-1.5 sm:left-2 bg-zinc-950/80 backdrop-blur-sm text-orange-500 border border-orange-500/30 text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 z-20">
           ★ {getScore(movie.slug)}
         </div>
         {movie.episode_current && (
-          <div className="absolute top-2 right-2 bg-orange-500 text-white text-[10px] font-medium px-1.5 py-0.5 rounded shadow-sm z-20">
+          <div className="absolute top-1.5 sm:top-2 right-1.5 sm:right-2 bg-orange-500 text-white text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm z-20 truncate max-w-[55%]">
             {movie.episode_current}
           </div>
         )}
 
         {/* Bottom Badges */}
-        <div className="absolute bottom-0 left-0 w-full p-2 flex justify-between items-center z-20 gap-1">
+        <div className="absolute bottom-0 left-0 w-full p-1.5 sm:p-2 flex justify-between items-center z-20 gap-1">
           {movie.lang && (
-            <span className="text-[9px] font-medium uppercase tracking-wider text-white bg-white/20 backdrop-blur-md px-1.5 py-0.5 rounded truncate max-w-[70%]">
+            <span className="text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-white bg-white/20 backdrop-blur-md px-1.5 py-0.5 rounded truncate max-w-[65%]">
               {movie.lang}
             </span>
           )}
           {movie.quality && (
-            <span className="text-[9px] font-medium uppercase tracking-wider text-orange-400 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded ml-auto">
+            <span className="text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-orange-400 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded ml-auto">
               {movie.quality}
             </span>
           )}
         </div>
       </div>
-      <h3 className="font-semibold text-sm leading-tight mb-1 line-clamp-1 group-hover:text-orange-500 transition-colors text-white mt-2">
+      <h3 className="font-semibold text-xs sm:text-sm leading-snug mb-1 line-clamp-1 group-hover:text-orange-500 transition-colors text-white mt-1.5 sm:mt-2">
         {movie.name}
       </h3>
     </button>
@@ -167,9 +169,9 @@ const MovieRow = React.memo(
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </h2>
-        <div className="flex overflow-x-auto gap-4 snap-x custom-scrollbar pb-4" style={{ WebkitOverflowScrolling: "touch" }}>
+        <div className="flex overflow-x-auto gap-3 sm:gap-4 snap-x custom-scrollbar pb-3 sm:pb-4" style={{ WebkitOverflowScrolling: "touch" }}>
           {movies.map((m) => (
-            <MovieCard key={m.slug} movie={m} onSelectMovie={onSelectMovie} className="w-[140px] md:w-[180px] lg:w-[200px] shrink-0 snap-start" />
+            <MovieCard key={m.slug} movie={m} onSelectMovie={onSelectMovie} className="w-[130px] sm:w-[160px] md:w-[180px] lg:w-[200px] shrink-0 snap-start" />
           ))}
         </div>
       </div>
@@ -368,6 +370,8 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<KKPhimListMovie[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
 
   // Detail Page states
   const [selectedMovie, setSelectedMovie] = useState<KKPhimListMovie | null>(null);
@@ -383,6 +387,9 @@ export default function Home() {
   // Mobile Menu state
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [mobileExpandedSection, setMobileExpandedSection] = useState<string | null>(null);
+
+  // Lock scroll when mobile menu or warning modals are active
+  useScrollLock(isMobileMenuOpen || showRoomWarningModal || showAuthWarningModal);
 
   // Tải tiến độ xem khi chọn một phim cụ thể
   useEffect(() => {
@@ -661,88 +668,85 @@ export default function Home() {
             : "bg-gradient-to-b from-black/80 via-black/30 to-transparent"
         }`}
       >
-        <div className="max-w-[98%] mx-auto px-2 xl:px-4 py-2 xl:py-3 flex flex-col xl:flex-row items-center gap-3 xl:gap-2 2xl:gap-5 justify-between">
-          <div className="flex flex-col md:flex-row items-center gap-3 xl:gap-2 w-full xl:w-auto shrink-0">
-            <div className="flex items-center justify-between w-full md:w-auto">
-              <div className="flex items-center gap-3">
-                <button
-                  className="xl:hidden text-zinc-300 hover:text-white cursor-pointer"
-                  onClick={() => {
-                    if (!handleNavigationAttempt()) return;
-                    setIsMobileMenuOpen(true);
-                  }}
-                  aria-label="Mở menu điều hướng di động"
-                >
-                  <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                </button>
-                <a
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    if (!handleNavigationAttempt(e)) return;
-                    handleGenreChange(genresMap[0]);
-                  }}
-                  className="cursor-pointer text-xl xl:text-2xl 2xl:text-3xl font-extrabold tracking-wide text-white shrink-0 hover:opacity-80 transition-opacity"
-                >
-                  Rạp<span className="text-orange-500">Nhà</span>
-                </a>
+        <div className="max-w-[98%] mx-auto px-2 xl:px-4 py-2 flex items-center justify-between gap-2 xl:gap-5">
+          {/* Brand & Mobile Hamburger */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <button
+              className="xl:hidden p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer touch-target rounded-xl hover:bg-white/5 transition-colors"
+              onClick={() => {
+                if (!handleNavigationAttempt()) return;
+                setIsMobileMenuOpen(true);
+              }}
+              aria-label="Mở menu điều hướng di động"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                if (!handleNavigationAttempt(e)) return;
+                handleGenreChange(genresMap[0]);
+              }}
+              className="cursor-pointer text-xl sm:text-2xl xl:text-2xl 2xl:text-3xl font-extrabold tracking-wide text-white shrink-0 hover:opacity-80 transition-opacity"
+            >
+              Rạp<span className="text-orange-500">Nhà</span>
+            </a>
+          </div>
+
+          {/* Search Bar (Desktop) */}
+          <div className="hidden xl:block w-[200px] 2xl:w-[300px] relative shrink">
+            <input
+              type="search"
+              placeholder="Tìm kiếm phim, diễn viên..."
+              value={searchQuery}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSearchQuery(val);
+                if (!val.trim()) {
+                  setSearchResults([]);
+                  setShowDropdown(false);
+                }
+              }}
+              onFocus={() => {
+                if (searchResults.length > 0) setShowDropdown(true);
+              }}
+              className="w-full bg-zinc-900/80 backdrop-blur-md text-white text-xs md:text-sm px-4 py-2 rounded-full border border-white/10 focus:outline-none focus:ring-1 focus:ring-orange-500 placeholder-zinc-400"
+            />
+            {isSearching && (
+              <div className="absolute right-3 top-2.5">
+                <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
               </div>
-            </div>
+            )}
 
-            {/* Search Bar */}
-            <div className="w-full md:w-[180px] xl:w-[200px] 2xl:w-[300px] relative shrink">
-              <input
-                type="search"
-                placeholder="Tìm kiếm phim, diễn viên..."
-                value={searchQuery}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSearchQuery(val);
-                  if (!val.trim()) {
-                    setSearchResults([]);
-                    setShowDropdown(false);
-                  }
-                }}
-                onFocus={() => {
-                  if (searchResults.length > 0) setShowDropdown(true);
-                }}
-                className="w-full bg-zinc-900/80 backdrop-blur-md text-white text-xs md:text-sm px-4 py-2 rounded-full border border-white/10 focus:outline-none focus:ring-1 focus:ring-orange-500 placeholder-zinc-400"
-              />
-              {isSearching && (
-                <div className="absolute right-3 top-2.5">
-                  <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-                </div>
-              )}
-
-              {/* Live Search Dropdown */}
-              {showDropdown && searchResults.length > 0 && (
-                <div className="absolute top-12 left-0 right-0 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-2 z-50 max-h-80 overflow-y-auto custom-scrollbar">
-                  {searchResults.map((m) => (
-                    <div
-                      key={m.slug}
-                      onClick={() => {
-                        handleSelectMovie(m);
-                        setShowDropdown(false);
-                        setSearchQuery("");
-                      }}
-                      className="cursor-pointer flex items-center gap-3 p-2 hover:bg-zinc-800 rounded-xl transition-colors"
-                    >
-                      <MovieImage
-                        src={m.thumb_url || m.poster_url}
-                        alt={m.name}
-                        className="w-10 h-14 object-cover rounded-lg shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-white text-xs md:text-sm font-semibold truncate">{m.name}</div>
-                        <div className="text-zinc-400 text-[11px] truncate">{m.origin_name} ({m.year})</div>
-                      </div>
+            {/* Live Search Dropdown */}
+            {showDropdown && searchResults.length > 0 && (
+              <div className="absolute top-12 left-0 right-0 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-2 z-50 max-h-80 overflow-y-auto custom-scrollbar">
+                {searchResults.map((m) => (
+                  <div
+                    key={m.slug}
+                    onClick={() => {
+                      handleSelectMovie(m);
+                      setShowDropdown(false);
+                      setSearchQuery("");
+                    }}
+                    className="cursor-pointer flex items-center gap-3 p-2 hover:bg-zinc-800 rounded-xl transition-colors"
+                  >
+                    <MovieImage
+                      src={m.thumb_url || m.poster_url}
+                      alt={m.name}
+                      className="w-10 h-14 object-cover rounded-lg shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-white text-xs md:text-sm font-semibold truncate">{m.name}</div>
+                      <div className="text-zinc-400 text-[11px] truncate">{m.origin_name} ({m.year})</div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Navigation Links (Desktop) */}
@@ -846,6 +850,21 @@ export default function Home() {
               Vào phòng
             </button>
 
+            {/* Nút Quản Trị Hệ Thống (Dành riêng cho Admin) */}
+            {userProfile?.role === 'admin' && (
+              <a
+                href="/admin"
+                className="cursor-pointer flex items-center gap-1 px-2.5 py-1 xl:py-1.5 rounded-full bg-orange-500/20 hover:bg-orange-500 text-orange-400 hover:text-white font-bold text-[10px] xl:text-xs transition-all border border-orange-500/40 shadow-lg shadow-orange-500/10 shrink-0"
+                title="Truy cập Trang Quản Trị Hệ Thống"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span>Quản trị</span>
+              </a>
+            )}
+
             {user ? (
               <div className="flex items-center bg-zinc-200 rounded-full py-1 xl:py-1.5 pl-2 xl:pl-3 pr-1.5 xl:pr-2 shadow-lg shrink min-w-0 gap-1.5">
                 <div className="flex items-center gap-2 cursor-pointer group shrink min-w-0" title="Tài khoản của bạn">
@@ -888,7 +907,151 @@ export default function Home() {
               </button>
             )}
           </div>
+
+          {/* Mobile Right Action Icons (xl:hidden) */}
+          <div className="flex xl:hidden items-center gap-1 sm:gap-2 shrink-0">
+            {/* Quick Search Toggle */}
+            <button
+              onClick={() => {
+                setIsMobileSearchOpen((prev) => !prev);
+                if (!isMobileSearchOpen) {
+                  setTimeout(() => mobileSearchInputRef.current?.focus(), 150);
+                }
+              }}
+              className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-zinc-300 hover:text-white rounded-xl hover:bg-white/5 transition-colors touch-target cursor-pointer"
+              aria-label="Tìm kiếm phim"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
+
+            {/* Quick Góp Ý */}
+            <button
+              onClick={() => {
+                setFeedbackMovieContext(
+                  selectedMovie
+                    ? {
+                        name: selectedMovie.name,
+                        episode: currentEpisode?.name,
+                        url: typeof window !== "undefined" ? window.location.href : "",
+                      }
+                    : null
+                );
+                setIsFeedbackOpen(true);
+              }}
+              className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-zinc-300 hover:text-white rounded-xl hover:bg-white/5 transition-colors touch-target cursor-pointer"
+              aria-label="Gửi góp ý"
+            >
+              <svg className="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+              </svg>
+            </button>
+
+            {/* Mobile Auth button / Avatar */}
+            {user ? (
+              <button
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="p-1 min-w-[44px] min-h-[44px] flex items-center justify-center touch-target cursor-pointer"
+                aria-label="Tài khoản"
+              >
+                {userProfile?.avatar_url ? (
+                  <img
+                    src={userProfile.avatar_url}
+                    alt="Avatar"
+                    className="w-8 h-8 rounded-full object-cover border border-orange-500/50"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-orange-500/20 text-orange-400 font-bold flex items-center justify-center text-xs border border-orange-500/30">
+                    {(userProfile?.username || user.email || "U").charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsAuthModalOpen(true)}
+                className="px-3 py-1.5 min-h-[44px] bg-zinc-200 hover:bg-white text-zinc-900 font-bold text-xs rounded-full transition-all flex items-center gap-1.5 touch-target shadow-md cursor-pointer"
+              >
+                <span>Đăng nhập</span>
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Mobile Search Overlay Input */}
+        {isMobileSearchOpen && (
+          <div className="xl:hidden bg-zinc-950/98 backdrop-blur-xl border-t border-b border-white/10 px-3 sm:px-4 py-2.5 shadow-2xl animate-in slide-in-from-top-2 duration-200">
+            <div className="relative flex items-center gap-2 max-w-md mx-auto">
+              <div className="relative flex-1">
+                <input
+                  ref={mobileSearchInputRef}
+                  type="search"
+                  placeholder="Tìm phim, diễn viên..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSearchQuery(val);
+                    if (!val.trim()) {
+                      setSearchResults([]);
+                      setShowDropdown(false);
+                    }
+                  }}
+                  onFocus={() => {
+                    if (searchResults.length > 0) setShowDropdown(true);
+                  }}
+                  className="w-full h-11 bg-zinc-900 text-white text-sm pl-10 pr-9 rounded-xl border border-white/15 focus:outline-none focus:ring-2 focus:ring-orange-500 placeholder-zinc-400"
+                />
+                <svg className="w-5 h-5 text-zinc-400 absolute left-3 top-3 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                {isSearching && (
+                  <div className="absolute right-3 top-3">
+                    <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileSearchOpen(false);
+                  setShowDropdown(false);
+                }}
+                className="cursor-pointer min-h-[44px] px-3.5 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-bold hover:text-white touch-target flex items-center justify-center shrink-0"
+              >
+                Đóng
+              </button>
+            </div>
+
+            {/* Live Search Results List on Mobile */}
+            {showDropdown && searchResults.length > 0 && (
+              <div className="mt-2.5 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-2 max-h-[60vh] overflow-y-auto custom-scrollbar max-w-md mx-auto">
+                {searchResults.map((m) => (
+                  <div
+                    key={m.slug}
+                    onClick={() => {
+                      handleSelectMovie(m);
+                      setShowDropdown(false);
+                      setSearchQuery("");
+                      setIsMobileSearchOpen(false);
+                    }}
+                    className="cursor-pointer flex items-center gap-3 p-2 hover:bg-zinc-800 rounded-xl transition-colors border-b border-white/5 last:border-b-0"
+                  >
+                    <MovieImage
+                      src={m.thumb_url || m.poster_url}
+                      alt={m.name}
+                      className="w-11 h-16 object-cover rounded-lg shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-white text-xs sm:text-sm font-semibold truncate">{m.name}</div>
+                      <div className="text-zinc-400 text-[11px] truncate">{m.origin_name} ({m.year})</div>
+                      <div className="text-orange-400 text-[11px] font-bold mt-0.5">★ {getScore(m.slug)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Mobile Menu Overlay */}
         {isMobileMenuOpen && (
@@ -900,31 +1063,43 @@ export default function Home() {
 
             <div className="absolute top-[75px] left-4 right-4 z-[100] xl:hidden bg-[#2b304c] text-white rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in-95 duration-200">
               {user ? (
-                <div className="w-full bg-zinc-200 text-zinc-900 font-bold py-3 px-4 rounded-full flex items-center justify-between mb-6 shadow-lg min-w-0">
-                  <div className="flex items-center gap-3 shrink min-w-0">
-                    {userProfile?.avatar_url ? (
-                      <img src={userProfile.avatar_url} alt="Avatar" className="w-6 h-6 rounded-full object-cover shrink-0" />
-                    ) : (
-                      <svg className="w-5 h-5 text-zinc-900 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                    <span
-                      className="text-zinc-900 font-bold text-[15px] truncate block min-w-0"
-                      title={userProfile?.username || user?.email?.split("@")[0]}
+                <>
+                  <div className="w-full bg-zinc-200 text-zinc-900 font-bold py-3 px-4 rounded-full flex items-center justify-between mb-4 shadow-lg min-w-0">
+                    <div className="flex items-center gap-3 shrink min-w-0">
+                      {userProfile?.avatar_url ? (
+                        <img src={userProfile.avatar_url} alt="Avatar" className="w-6 h-6 rounded-full object-cover shrink-0" />
+                      ) : (
+                        <svg className="w-5 h-5 text-zinc-900 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      <span
+                        className="text-zinc-900 font-bold text-[15px] truncate block min-w-0"
+                        title={userProfile?.username || user?.email?.split("@")[0]}
+                      >
+                        {userProfile?.username || user?.email?.split("@")[0]}
+                      </span>
+                    </div>
+                    <button
+                      onClick={async () => await supabase.auth.signOut()}
+                      className="cursor-pointer text-zinc-500 hover:text-zinc-900 bg-zinc-300/50 p-1.5 rounded-full transition-colors shrink-0"
                     >
-                      {userProfile?.username || user?.email?.split("@")[0]}
-                    </span>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                    </button>
                   </div>
-                  <button
-                    onClick={async () => await supabase.auth.signOut()}
-                    className="cursor-pointer text-zinc-500 hover:text-zinc-900 bg-zinc-300/50 p-1.5 rounded-full transition-colors shrink-0"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                  </button>
-                </div>
+
+                  {userProfile?.role === 'admin' && (
+                    <a
+                      href="/admin"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="w-full bg-orange-500/15 border border-orange-500/30 text-orange-400 font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 mb-4 hover:bg-orange-500 hover:text-white transition-colors text-xs shadow-md"
+                    >
+                      <span>⚙️ Bảng Điều Khiển Quản Trị</span>
+                    </a>
+                  )}
+                </>
               ) : (
                 <button
                   onClick={() => {
@@ -1059,10 +1234,10 @@ export default function Home() {
         /* ---------------------------------
            DETAIL VIEW (TRANG XEM CHI TIẾT & PLAYER)
            --------------------------------- */
-        <div className="pt-[140px] lg:pt-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 relative z-10 animate-in fade-in duration-500">
+        <div className="pt-16 sm:pt-20 lg:pt-24 max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pb-20 xl:pb-12 relative z-10 animate-in fade-in duration-500">
           <button
             onClick={handleCloseMovie}
-            className="cursor-pointer flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-900 border border-white/5 text-zinc-300 hover:text-white hover:bg-zinc-800 mb-6 transition-all w-fit"
+            className="cursor-pointer min-h-[44px] flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-900 border border-white/5 text-zinc-300 hover:text-white hover:bg-zinc-800 mb-6 transition-all w-fit touch-target"
           >
             <span>&larr;</span> Quay lại
           </button>
@@ -1272,7 +1447,7 @@ export default function Home() {
                               <button
                                 key={ep.name}
                                 onClick={() => playEpisode(ep)}
-                                className={`cursor-pointer px-5 py-2.5 rounded-xl font-semibold border transition-all flex items-center gap-2 ${
+                                className={`cursor-pointer min-h-[44px] px-4 sm:px-5 py-2.5 rounded-xl font-semibold border transition-all flex items-center gap-2 touch-target ${
                                   currentEpisode?.name === ep.name
                                     ? "bg-orange-500 text-white border-orange-500 shadow-md"
                                     : isWatchingThis
@@ -1435,12 +1610,12 @@ export default function Home() {
                   <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/40 to-transparent w-full md:w-2/3 z-0"></div>
                   <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-transparent h-1/2 top-auto bottom-0 z-0"></div>
 
-                  <div className="absolute inset-0 flex flex-col justify-end md:justify-center px-6 md:px-16 w-full md:w-3/4 lg:w-1/2 z-10 pt-[140px] md:pt-20 pb-[120px] md:pb-0">
-                    <h1 className="text-4xl md:text-5xl lg:text-7xl font-extrabold tracking-tight mb-8 text-white drop-shadow-2xl leading-tight max-w-4xl">
+                  <div className="absolute inset-0 flex flex-col justify-end md:justify-center px-4 sm:px-8 md:px-16 w-full md:w-3/4 lg:w-1/2 z-10 pt-16 sm:pt-20 md:pt-20 pb-20 md:pb-0">
+                    <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-extrabold tracking-tight mb-4 sm:mb-6 md:mb-8 text-white drop-shadow-2xl leading-tight max-w-4xl">
                       {activeHeroMovie.name}
                     </h1>
 
-                    <div className="flex flex-wrap items-center gap-2.5 mb-10 text-xs md:text-sm font-bold uppercase tracking-wider">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 mb-6 sm:mb-8 md:mb-10 text-xs md:text-sm font-bold uppercase tracking-wider">
                       <span className="px-3 py-1.5 rounded-md bg-orange-500 text-white shadow-lg shadow-orange-500/30">
                         ★ {getScore(activeHeroMovie.slug)}
                       </span>
@@ -1611,16 +1786,16 @@ export default function Home() {
                   <MovieRow title="Anime Mới Nhất" url="https://phimapi.com/v1/api/danh-sach/hoat-hinh?limit=10" onSelectMovie={handleSelectMovie} />
                 </div>
               ) : (
-                <div className="max-w-[95%] mx-auto px-4 pt-28 pb-12">
-                  <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-2xl md:text-3xl font-bold text-white border-l-4 border-orange-500 pl-3">
+                <div className="max-w-[95%] mx-auto px-3 sm:px-4 pt-20 sm:pt-24 pb-20 xl:pb-12">
+                  <div className="flex items-center justify-between mb-6 sm:mb-8">
+                    <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-white border-l-4 border-orange-500 pl-3">
                       {currentGenre.name}
                     </h2>
                     <div className="flex items-center gap-2">
                       <select
                         value={currentSort}
                         onChange={(e) => setCurrentSort(e.target.value)}
-                        className="bg-zinc-900 border border-white/10 text-zinc-300 text-xs sm:text-sm rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-orange-500"
+                        className="bg-zinc-900 border border-white/10 text-zinc-300 text-xs sm:text-sm rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-orange-500 min-h-[40px]"
                         aria-label="Sắp xếp phim"
                       >
                         <option value="rating">Điểm cao nhất</option>
@@ -1630,7 +1805,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 md:gap-6">
                     {sortedMovies.map((m) => (
                       <MovieCard key={m.slug} movie={m} onSelectMovie={handleSelectMovie} />
                     ))}
@@ -1741,7 +1916,7 @@ export default function Home() {
       )}
 
       {/* Footer */}
-      <footer className="pt-8 pb-10 px-4 flex flex-col items-center justify-center text-center bg-zinc-950 border-t border-white/5">
+      <footer className="pt-8 pb-24 xl:pb-12 px-4 flex flex-col items-center justify-center text-center bg-zinc-950 border-t border-white/5">
         <p className="text-zinc-400 text-xs md:text-sm max-w-4xl mb-4 leading-relaxed">
           Trang web này là một dự án cá nhân phi thương mại, được xây dựng hoàn toàn với mục đích học tập và nghiên cứu. Tất cả nội dung video đều được thu thập tự động từ các nguồn chia sẻ cộng đồng trên Internet. Nếu có bất kỳ vấn đề nào liên quan đến bản quyền, vui lòng thông báo cho chúng tôi để được gỡ bỏ kịp thời. Xin chân thành cảm ơn!
         </p>
@@ -1760,6 +1935,18 @@ export default function Home() {
             </svg>
             <span>Gửi góp ý / Báo lỗi cho quản trị viên</span>
           </button>
+
+          {userProfile?.role === 'admin' && (
+            <>
+              <span className="text-zinc-600">&bull;</span>
+              <a
+                href="/admin"
+                className="text-orange-400 hover:text-orange-300 font-semibold flex items-center gap-1.5 transition-colors"
+              >
+                <span>⚙️ Quản trị hệ thống</span>
+              </a>
+            </>
+          )}
         </div>
 
         <div className="text-white font-bold text-sm md:text-base">
@@ -1871,6 +2058,64 @@ export default function Home() {
           onJoinSuccess={(room) => setCurrentRoom(room as unknown as WatchRoom)}
         />
       )}
+
+      {/* Mobile Bottom Navigation Bar */}
+      <MobileBottomNav
+        user={user}
+        userProfile={userProfile}
+        activeSection={
+          isFeedbackOpen
+            ? 'feedback'
+            : currentRoom
+            ? 'room'
+            : isAuthModalOpen
+            ? 'profile'
+            : isMobileSearchOpen
+            ? 'search'
+            : 'home'
+        }
+        isVisible={!currentRoom}
+        onHomeClick={() => {
+          if (selectedMovie) {
+            handleCloseMovie();
+          } else {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }
+          setIsMobileSearchOpen(false);
+        }}
+        onSearchClick={() => {
+          setIsMobileSearchOpen((prev) => !prev);
+          setTimeout(() => {
+            mobileSearchInputRef.current?.focus();
+          }, 150);
+        }}
+        onRoomClick={() => {
+          if (!user) {
+            setShowAuthWarningModal(true);
+          } else {
+            setIsJoinRoomOpen(true);
+          }
+        }}
+        onFeedbackClick={() => {
+          setFeedbackMovieContext(
+            selectedMovie
+              ? {
+                  name: selectedMovie.name,
+                  episode: currentEpisode?.name,
+                  url: typeof window !== "undefined" ? window.location.href : "",
+                }
+              : null
+          );
+          setIsFeedbackOpen(true);
+        }}
+        onProfileClick={() => {
+          if (!user) {
+            setIsAuthModalOpen(true);
+          } else {
+            setIsMobileMenuOpen(true);
+          }
+        }}
+      />
     </div>
   );
 }

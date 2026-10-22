@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { joinWatchRoom } from '@/lib/room';
+import { useScrollLock } from '@/hooks/useScrollLock';
 
 type JoinRoomModalProps = {
   isOpen: boolean;
@@ -9,6 +10,7 @@ type JoinRoomModalProps = {
 };
 
 export default function JoinRoomModal({ isOpen, onClose, userId, onJoinSuccess }: JoinRoomModalProps) {
+  useScrollLock(isOpen);
   const [roomCode, setRoomCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);

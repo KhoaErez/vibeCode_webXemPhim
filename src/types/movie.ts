@@ -40,8 +40,11 @@ export type GenreItem = {
 export type UserProfile = {
   id: string;
   username: string;
+  email?: string;
   avatar_url?: string;
+  role?: 'user' | 'admin';
   created_at?: string;
+  last_seen_at?: string;
 };
 
 export type WatchRoom = {

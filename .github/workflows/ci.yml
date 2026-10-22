@@ -10,7 +10,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
+  # ============================================================================
+  # 1. QUALITY ASSURANCE (LINT, TYPE CHECK, PRODUCTION BUILD)
+  # ============================================================================
   validate:
     name: 🔍 Lint, Type Check & Build
     runs-on: ubuntu-latest
@@ -19,7 +26,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -42,9 +49,58 @@ jobs:
           FEEDBACK_RECEIVER_EMAIL: ${{ secrets.FEEDBACK_RECEIVER_EMAIL || 'khoadev27@gmail.com' }}
         run: npm run build
 
-  deploy:
-    name: 🚀 Deploy to Production (Vercel)
+  # ============================================================================
+  # 2. DOCKER CONTAINER BUILD & GHCR REGISTRY PUSH
+  # ============================================================================
+  docker:
+    name: 🐳 Docker Build & Container Registry
     needs: validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,format=short
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://pyefmwwjtsabrcprbnrb.supabase.co' }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_T3tKOFyz13eOX7EPpHnXpw_j1SftGtt' }}
+
+  # ============================================================================
+  # 3. CONTINUOUS DEPLOYMENT (VERCEL / WEBHOOK / VPS)
+  # ============================================================================
+  deploy:
+    name: 🚀 Deploy to Production
+    needs: [validate, docker]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
 
@@ -52,21 +108,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Option A: Deploy to Vercel (if secrets configured)
       - name: Check Vercel Token Configuration
-        id: check_token
+        id: check_vercel
         run: |
-          if [ -z "${{ secrets.VERCEL_TOKEN }}" ]; then
-            echo "::warning::VERCEL_TOKEN secret is not set. Skipping automated deployment via GitHub Actions. If you connected GitHub directly via Vercel dashboard, Vercel will auto-deploy natively."
-            echo "has_token=false" >> $GITHUB_OUTPUT
+          if [ -n "${{ secrets.VERCEL_TOKEN }}" ]; then
+            echo "has_vercel=true" >> $GITHUB_OUTPUT
           else
-            echo "has_token=true" >> $GITHUB_OUTPUT
+            echo "has_vercel=false" >> $GITHUB_OUTPUT
+            echo "::notice::VERCEL_TOKEN secret is not set. If your GitHub repository is connected directly to Vercel, Vercel will automatically build and deploy natively upon git push."
           fi
 
       - name: Deploy to Vercel Production
-        if: steps.check_token.outputs.has_token == 'true'
+        if: steps.check_vercel.outputs.has_vercel == 'true'
         uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           vercel-args: '--prod'
+
+      # Option B: Trigger Deploy Webhook (for Coolify, CapRover, Portainer, or Self-hosted VPS)
+      - name: Trigger Deployment Webhook (Optional)
+        if: ${{ env.DEPLOY_WEBHOOK_URL != '' }}
+        env:
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+        run: |
+          echo "Triggering deployment webhook..."
+          curl -X POST -f "${{ secrets.DEPLOY_WEBHOOK_URL }}" || echo "::warning::Webhook trigger failed or not reachable."
